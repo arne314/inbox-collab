@@ -18,7 +18,7 @@ type MailConfig struct {
 }
 
 type Config struct {
-	Mail             map[string]MailConfig `toml:"mail"`
+	Mail             map[string]*MailConfig `toml:"mail"`
 	MatrixHomeServer string
 	MatrixUsername   string
 	MatrixPassword   string

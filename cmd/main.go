@@ -51,5 +51,6 @@ func shutdown() {
 	dbHandler.Stop(waitGroup)
 	mailHandler.Stop(waitGroup)
 	matrixHandler.Stop(waitGroup)
+	waitGroup.Wait()
 	log.Info("Shutdown successful")
 }
