@@ -7,10 +7,12 @@ authors = [
     { name = "arne314" }
 ]
 requires-python = ">=3.12"
-dependencies = []
-
-[project.scripts]
-inbox-collab = "inbox_collab.main:serve"
+dependencies = [
+    "fastapi[standard]>=0.115.8",
+    "langchain>=0.3.19",
+    "langchain-ollama>=0.2.3",
+    "pydantic>=2.10.6",
+]
 
 [tool.ruff]
 lint.extend-select = ["I"]

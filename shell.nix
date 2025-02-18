@@ -9,6 +9,7 @@
 pkgs.mkShell {
   packages = with pkgs; [
     go
+    ollama
     olm
     uv
   ];
