@@ -1,0 +1,27 @@
+[project]
+name = "inbox-collab"
+version = "0.1.0"
+description = "Organize and discuss incoming team mails in Matrix threads"
+readme = "README.md"
+authors = [
+    { name = "arne314" }
+]
+requires-python = ">=3.12"
+dependencies = []
+
+[project.scripts]
+inbox-collab = "inbox_collab.main:serve"
+
+[tool.ruff]
+lint.extend-select = ["I"]
+line-length = 100
+
+[dependency-groups]
+dev = [
+    "ruff>=0.8.5",
+]
+
+[build-system]
+requires = ["pdm-backend"]
+build-backend = "pdm.backend"
+

@@ -10,5 +10,10 @@ pkgs.mkShell {
   packages = with pkgs; [
     go
     olm
+    uv
   ];
+
+  shellHook = ''
+    source .venv/bin/activate
+  '';
 }
