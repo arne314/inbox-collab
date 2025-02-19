@@ -29,6 +29,19 @@ func (mh *MailHandler) Setup(cfg *config.Config) {
 func (mh *MailHandler) Run() {
 }
 
+func (mh *MailHandler) FetchMessages(mails chan []*Mail) {
+	var wg sync.WaitGroup
+	for _, fetcher := range mh.fetchers {
+		wg.Add(1)
+		go func() {
+			mails <- fetcher.FetchMessages()
+			wg.Done()
+		}()
+	}
+	wg.Wait()
+	close(mails)
+}
+
 func (mh *MailHandler) Stop(waitGroup *sync.WaitGroup) {
 	waitGroup.Add(len(mh.fetchers))
 	for _, fetcher := range mh.fetchers {

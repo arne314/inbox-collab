@@ -22,6 +22,7 @@ type Config struct {
 	MatrixHomeServer string
 	MatrixUsername   string
 	MatrixPassword   string
+	DatabaseUrl      string
 }
 
 func (c *Config) Load() {
@@ -45,6 +46,7 @@ func (c *Config) Load() {
 	c.MatrixHomeServer = os.Getenv("MATRIX_HOMESERVER")
 	c.MatrixUsername = os.Getenv("MATRIX_USERNAME")
 	c.MatrixPassword = os.Getenv("MATRIX_PASSWORD")
+	c.DatabaseUrl = os.Getenv("DATABASE_URL")
 
 	for name, mailConfig := range c.Mail {
 		mailConfig.Username = os.Getenv(fmt.Sprintf("MAIL_%s_USERNAME", strings.ToUpper(name)))

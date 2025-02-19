@@ -11,10 +11,12 @@ pkgs.mkShell {
     go
     ollama
     olm
+    sqlc
     uv
   ];
 
   shellHook = ''
     source .venv/bin/activate
+    export $(cat .env)
   '';
 }

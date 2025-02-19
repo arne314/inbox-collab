@@ -8,6 +8,7 @@ import (
 
 	log "github.com/sirupsen/logrus"
 
+	"github.com/arne314/inbox-collab/internal/app"
 	cfg "github.com/arne314/inbox-collab/internal/config"
 	"github.com/arne314/inbox-collab/internal/db"
 	"github.com/arne314/inbox-collab/internal/mail"
@@ -20,6 +21,7 @@ var (
 	dbHandler     *db.DbHandler         = &db.DbHandler{}
 	matrixHandler *matrix.MatrixHandler = &matrix.MatrixHandler{}
 	mailHandler   *mail.MailHandler     = &mail.MailHandler{}
+	inboxCollab   *app.InboxCollab      = &app.InboxCollab{}
 )
 
 func main() {
@@ -34,9 +36,11 @@ func main() {
 	dbHandler.Setup(config)
 	mailHandler.Setup(config)
 	matrixHandler.Setup(config, *verifyMatrixSession)
+	inboxCollab.Setup(config, dbHandler, mailHandler, matrixHandler)
 
 	go mailHandler.Run()
 	go matrixHandler.Run()
+	go inboxCollab.Run()
 
 	stop := make(chan os.Signal, 1)
 	signal.Notify(stop, os.Interrupt)
@@ -51,6 +55,7 @@ func shutdown() {
 	dbHandler.Stop(waitGroup)
 	mailHandler.Stop(waitGroup)
 	matrixHandler.Stop(waitGroup)
+	inboxCollab.Stop(waitGroup)
 	waitGroup.Wait()
 	log.Info("Shutdown successful")
 }
