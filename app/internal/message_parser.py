@@ -1,4 +1,5 @@
 from asyncio import Semaphore
+from datetime import datetime
 
 import langchain
 from langchain.output_parsers import OutputFixingParser
@@ -34,7 +35,7 @@ class MessageParser:
 
         prompt = PromptTemplate(
             template=template,
-            input_variables=["conversation", "format_instructions"],
+            input_variables=["conversation", "timestamp", "format_instructions"],
             partial_variables={
                 "format_instructions": base_parser.get_format_instructions(),
             },
@@ -47,9 +48,9 @@ class MessageParser:
     def get_concurrent_prompts(self) -> int:
         return max_concurrent_prompts - self.semaphore._value
 
-    async def parse_messages(self, conversation):
+    async def parse_messages(self, conversation: str, timestamp: datetime):
         async with self.semaphore:
-            inputs = {"conversation": conversation}
+            inputs = {"conversation": conversation, "timestamp": timestamp}
             output = await self.chain.ainvoke(inputs)
 
             try:
@@ -57,8 +58,10 @@ class MessageParser:
                 print("Message extraction successful")
                 if self.debug:
                     for i, msg in enumerate(parsed.messages):
-                        print(f"Message {i+1} from {msg[0]}:\n{msg[1]}\n")
-                return parsed.messages
+                        print(
+                            f"Message {"(forwarded) " if parsed.forwarded else ""}{i+1} from {msg.author} at {msg.timestamp}:\n{msg.content}\n"
+                        )
+                return parsed
             except OutputParserException:
                 print("Failed to extract messages")
                 return [["Error extracting messages", conversation]]
