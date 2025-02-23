@@ -9,12 +9,11 @@ from langchain_core.runnables import Runnable
 from langchain_ollama import OllamaLLM
 from langchain_openai import ChatOpenAI
 
-from .prompt import BaseParser, ResponseSchema, template
+from .prompt import BaseParser, MessageSchema, ResponseSchema, template
 
 
 class MessageParser:
-    base_chain: Runnable
-    retry_chain: Runnable
+    chain: Runnable
     fixing_parser: OutputFixingParser
     deub: bool
     semaphore: Semaphore
@@ -78,13 +77,18 @@ class MessageParser:
     def get_concurrent_prompts(self) -> int:
         return self.max_concurrent_prompts - self.semaphore._value
 
-    async def parse_messages(self, conversation: str, timestamp: datetime):
+    async def parse_messages(self, conversation: str, timestamp: datetime) -> ResponseSchema:
         async with self.semaphore:
-            inputs = {"conversation": conversation, "timestamp": timestamp}
+            inputs = {
+                "conversation": conversation,
+                "timestamp": timestamp.strftime("%Y-%m-%dT%H:%M"),
+            }
             output = await self.chain.ainvoke(inputs)
 
             try:
                 parsed: ResponseSchema = await self.fixing_parser.ainvoke(output)
+                if len(parsed.messages) == 1:
+                    parsed.messages[0].timestamp = timestamp
                 print("Message extraction successful")
                 if self.debug:
                     for i, msg in enumerate(parsed.messages):
@@ -94,4 +98,14 @@ class MessageParser:
                 return parsed
             except OutputParserException:
                 print("Failed to extract messages")
-                return [["Error extracting messages", conversation]]
+                return ResponseSchema(
+                    messages=[
+                        MessageSchema(
+                            author="Error extracting messages",
+                            content=conversation,
+                            timestamp=timestamp,
+                        ),
+                    ],
+                    forwarded=False,
+                    forwarded_by=None,
+                )

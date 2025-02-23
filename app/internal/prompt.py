@@ -2,13 +2,18 @@ from datetime import datetime
 from typing import List
 
 from langchain.output_parsers import PydanticOutputParser
-from pydantic import BaseModel, Field
+from langchain_core.exceptions import OutputParserException
+from pydantic import BaseModel, Field, field_serializer
 
 
 class MessageSchema(BaseModel):
     author: str = Field(..., description="Message author")
     content: str = Field(..., description="Message content")
     timestamp: datetime | None = Field(..., description="Message timestamp")
+
+    @field_serializer("timestamp")
+    def serialize_timestamp(self, value: datetime) -> str:
+        return value.astimezone().isoformat()
 
 
 class ResponseSchema(BaseModel):
@@ -23,6 +28,30 @@ class ResponseSchema(BaseModel):
 class BaseParser(PydanticOutputParser):
     def __init__(self):
         super().__init__(pydantic_object=ResponseSchema)
+
+    def parse(self, text):  # additional data validation and processing
+        parsed: ResponseSchema = super().parse(text)
+        if all(msg.timestamp is None for msg in parsed.messages):
+            raise OutputParserException(
+                "Please set the `timestamp` of the most recent message to the one given in the prompt"
+            )
+        if (
+            parsed.forwarded and (parsed.forwarded_by is None or parsed.forwarded_by.isspace())
+        ) or (
+            not parsed.forwarded
+            and parsed.forwarded_by is not None
+            and not parsed.forwarded_by.isspace()
+        ):
+            raise OutputParserException(
+                "Please set the `forwarded` boolean and `forwarded_by` string according to the given conversation"
+            )
+        parsed.messages.sort(
+            key=lambda m: m.timestamp if m.timestamp is not None else datetime.fromtimestamp(0),
+            reverse=True,  # most recent message first
+        )
+        if not parsed.forwarded:
+            parsed.forwarded_by = None
+        return parsed
 
     def get_format_instructions(self):
         return """
