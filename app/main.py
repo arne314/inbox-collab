@@ -1,12 +1,21 @@
+import os
 import sys
+import tomllib
+from datetime import datetime
 
+from dotenv import load_dotenv
 from fastapi import FastAPI
 from pydantic import BaseModel
 
 from internal import MessageParser
 
+load_dotenv()
+with open("config.toml", "rb") as f:
+    config = tomllib.load(f)
+    config["llm"]["openai_api_key"] = os.getenv("OPENAI_API_KEY")
+
 app = FastAPI()
-message_parser = MessageParser("dev" in sys.argv)
+message_parser = MessageParser("dev" in sys.argv, config.get("llm", {}))
 
 
 @app.get("/")
@@ -16,8 +25,9 @@ async def read_root():
 
 class ParseMessagesRequest(BaseModel):
     conversation: str
+    timestamp: datetime
 
 
 @app.post("/parse_messages")
 async def parse_messages(req: ParseMessagesRequest):
-    return await message_parser.parse_messages(req.conversation)
+    return await message_parser.parse_messages(req.conversation, req.timestamp)

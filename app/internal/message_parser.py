@@ -7,12 +7,9 @@ from langchain_core.exceptions import OutputParserException
 from langchain_core.prompts import PromptTemplate
 from langchain_core.runnables import Runnable
 from langchain_ollama import OllamaLLM
+from langchain_openai import ChatOpenAI
 
 from .prompt import BaseParser, ResponseSchema, template
-
-model = "llama3.1:8b"
-ollama_url = "http://localhost:11434"
-max_concurrent_prompts = 5
 
 
 class MessageParser:
@@ -21,17 +18,50 @@ class MessageParser:
     fixing_parser: OutputFixingParser
     deub: bool
     semaphore: Semaphore
+    max_concurrent_prompts: int
 
-    def __init__(self, debug=False):
+    def __init__(self, debug, config):
         self.debug = debug
-        self.semaphore = Semaphore(max_concurrent_prompts)
+        self.max_concurrent_prompts = config.get("max_concurrent_prompts", 5)
+        self.semaphore = Semaphore(self.max_concurrent_prompts)
         langchain.debug = self.debug
 
         base_parser = BaseParser()
-        llm = OllamaLLM(model=model, base_url=ollama_url, temperature=0.1, top_p=0.15, top_k=10)
-        llm_retry = OllamaLLM(
-            model=model, base_url=ollama_url, temperature=0.5, top_p=0.5, top_k=25
+        llm = OllamaLLM(
+            model="llama3.1:8b",
+            base_url="http://localhost:11434",
+            temperature=0.1,
+            top_p=0.15,
+            top_k=10,
         )
+        llm_retry = None
+
+        if (llm_config_model := config.get("openai_model")) is not None:
+            assert llm.temperature is not None
+            llm = ChatOpenAI(
+                model=llm_config_model,
+                base_url=config.get("openai_url"),
+                api_key=config.get("openai_api_key"),
+                temperature=llm.temperature,
+            )
+        elif (llm_config_model := config.get("ollama_model")) is not None:
+            llm.model = llm_config_model
+            if (llm_config_url := config.get("ollama_url")) is not None:
+                llm.base_url = llm_config_url
+
+        if isinstance(llm, OllamaLLM):
+            llm_retry = OllamaLLM(
+                model=llm.model, base_url=llm.base_url, temperature=0.5, top_p=0.5, top_k=25
+            )
+        elif isinstance(llm, ChatOpenAI):
+            llm_retry = ChatOpenAI(
+                model=llm.model_name,
+                base_url=llm.openai_api_base,
+                api_key=llm.openai_api_key,
+                temperature=0.5,
+            )
+        assert llm_retry is not None, "Retry llm could not be set, check you config"
+        print(f"Setup llm provider: {llm}")
 
         prompt = PromptTemplate(
             template=template,
@@ -46,7 +76,7 @@ class MessageParser:
         )
 
     def get_concurrent_prompts(self) -> int:
-        return max_concurrent_prompts - self.semaphore._value
+        return self.max_concurrent_prompts - self.semaphore._value
 
     async def parse_messages(self, conversation: str, timestamp: datetime):
         async with self.semaphore:

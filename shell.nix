@@ -17,6 +17,5 @@ pkgs.mkShell {
 
   shellHook = ''
     source .venv/bin/activate
-    export $(cat .env)
   '';
 }
