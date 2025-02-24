@@ -64,7 +64,7 @@ class MessageParser:
 
         prompt = PromptTemplate(
             template=template,
-            input_variables=["conversation", "timestamp", "format_instructions"],
+            input_variables=["conversation", "subject", "timestamp", "format_instructions"],
             partial_variables={
                 "format_instructions": base_parser.get_format_instructions(),
             },
@@ -77,10 +77,13 @@ class MessageParser:
     def get_concurrent_prompts(self) -> int:
         return self.max_concurrent_prompts - self.semaphore._value
 
-    async def parse_messages(self, conversation: str, timestamp: datetime) -> ResponseSchema:
+    async def parse_messages(
+        self, conversation: str, subject: str, timestamp: datetime
+    ) -> ResponseSchema:
         async with self.semaphore:
             inputs = {
                 "conversation": conversation,
+                "subject": subject,
                 "timestamp": timestamp.strftime("%Y-%m-%dT%H:%M"),
             }
             output = await self.chain.ainvoke(inputs)

@@ -51,7 +51,7 @@ func main() {
 }
 
 func shutdown() {
-	waitGroup.Add(3)
+	waitGroup.Add(4)
 	dbHandler.Stop(waitGroup)
 	mailHandler.Stop(waitGroup)
 	matrixHandler.Stop(waitGroup)

@@ -6,12 +6,13 @@ CREATE TABLE thread (
 
 CREATE TABLE mail (
     id BIGSERIAL PRIMARY KEY,
-    mail_id VARCHAR(320) UNIQUE,
-    date TIMESTAMP,
+    mail_id VARCHAR(320) UNIQUE NOT NULL,
+    timestamp TIMESTAMP NOT NULL,
     addr_from TEXT,
     addr_to TEXT,
+    subject TEXT NOT NULL,
     body TEXT,
-    messages TEXT[][],
+    messages JSONB,
     last_message_extraction TIMESTAMP,
     reply_to BIGINT REFERENCES mail(id) ON DELETE SET NULL,
     thread BIGINT REFERENCES thread(id) ON DELETE SET NULL

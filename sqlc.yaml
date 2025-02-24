@@ -8,3 +8,16 @@ sql:
         package: "db"
         out: "internal/db/generated"
         sql_package: "pgx/v5"
+        emit_result_struct_pointers: true
+        overrides:
+          - column: "mail.body"
+            go_type:
+              type: "pgtype.Text"
+              pointer: true
+          - column: "mail.messages"
+            nullable: true
+            go_type:
+              type: "ExtractedMessages"
+              pointer: true
+              package: "db"
+              import: "github.com/arne314/inbox-collab/internal/db/sqlc"

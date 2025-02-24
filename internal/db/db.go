@@ -40,17 +40,43 @@ func (dh *DbHandler) Setup(cfg *config.Config) {
 func (dh *DbHandler) AddMails(mails []*db.Mail) {
 	for _, mail := range mails {
 		err := dh.queries.AddMail(context.Background(), db.AddMailParams{
-			MailID:   mail.MailID,
-			Date:     mail.Date,
-			AddrFrom: mail.AddrFrom,
-			AddrTo:   mail.AddrTo,
-			Body:     mail.Body,
+			MailID:    mail.MailID,
+			Timestamp: mail.Timestamp,
+			AddrFrom:  mail.AddrFrom,
+			AddrTo:    mail.AddrTo,
+			Subject:   mail.Subject,
+			Body:      mail.Body,
 		})
 		if err != nil {
 			log.Errorf("Error adding mail to db: %v", err)
 			return
 		}
 	}
+}
+
+func (dh *DbHandler) GetMailsRequiringMessageExtraction() []*db.Mail {
+	mails, err := dh.queries.GetMailsRequiringMessageExtraction(context.Background())
+	if err != nil {
+		log.Errorf("Error fetching mails requiring message extraction: %v", err)
+		return []*db.Mail{}
+	}
+	log.Infof("Loaded %v mails requiring message extraction from db", len(mails))
+	return mails
+}
+
+func (dh *DbHandler) UpdateExtractedMessages(mail *db.Mail) {
+	err := dh.queries.UpdateExtractedMessages(
+		context.Background(),
+		db.UpdateExtractedMessagesParams{
+			ID:       mail.ID,
+			Messages: mail.Messages,
+		},
+	)
+	if err != nil {
+		log.Errorf("Error updating extracted messages: %v", err)
+		return
+	}
+	log.Infof("Updated extracted messages of mail %v", mail.ID)
 }
 
 func (dh *DbHandler) Stop(waitGroup *sync.WaitGroup) {

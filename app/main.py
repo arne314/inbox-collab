@@ -25,9 +25,10 @@ async def read_root():
 
 class ParseMessagesRequest(BaseModel):
     conversation: str
+    subject: str
     timestamp: datetime
 
 
 @app.post("/parse_messages")
 async def parse_messages(req: ParseMessagesRequest):
-    return await message_parser.parse_messages(req.conversation, req.timestamp)
+    return await message_parser.parse_messages(req.conversation, req.subject, req.timestamp)

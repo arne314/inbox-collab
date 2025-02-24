@@ -17,21 +17,21 @@ type MailConfig struct {
 	Password string
 }
 
+type LLMConfig struct {
+	ApiUrl string `toml:"python_api"`
+}
+
 type Config struct {
 	Mail             map[string]*MailConfig `toml:"mail"`
 	MatrixHomeServer string
 	MatrixUsername   string
 	MatrixPassword   string
 	DatabaseUrl      string
+	LLM              *LLMConfig `toml:"llm"`
 }
 
 func (c *Config) getenv(name string) string {
-	val := os.Getenv(name)
-	runes := []rune(val)
-	if runes[0] == '"' && runes[len(runes)-1] == '"' {
-		return string(runes[1:(len(runes) - 1)])
-	}
-	return val
+	return os.Getenv(name)
 }
 
 func (c *Config) Load() {
