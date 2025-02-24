@@ -5,17 +5,19 @@
 package db
 
 import (
+	db "github.com/arne314/inbox-collab/internal/db/sqlc"
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
 type Mail struct {
 	ID                    int64
-	MailID                pgtype.Text
-	Date                  pgtype.Timestamp
+	MailID                string
+	Timestamp             pgtype.Timestamp
 	AddrFrom              pgtype.Text
 	AddrTo                pgtype.Text
-	Body                  pgtype.Text
-	Messages              [][]string
+	Subject               string
+	Body                  *pgtype.Text
+	Messages              *db.ExtractedMessages
 	LastMessageExtraction pgtype.Timestamp
 	ReplyTo               pgtype.Int8
 	Thread                pgtype.Int8

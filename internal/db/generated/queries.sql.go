@@ -8,55 +8,96 @@ package db
 import (
 	"context"
 
+	db "github.com/arne314/inbox-collab/internal/db/sqlc"
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
 const addMail = `-- name: AddMail :exec
-INSERT INTO mail (mail_id, date, addr_from, addr_to, body)
-VALUES ($1, $2, $3, $4, $5)
+INSERT INTO mail (mail_id, timestamp, addr_from, addr_to, subject, body)
+VALUES ($1, $2, $3, $4, $5, $6)
 ON CONFLICT (mail_id) DO NOTHING
 `
 
 type AddMailParams struct {
-	MailID   pgtype.Text
-	Date     pgtype.Timestamp
-	AddrFrom pgtype.Text
-	AddrTo   pgtype.Text
-	Body     pgtype.Text
+	MailID    string
+	Timestamp pgtype.Timestamp
+	AddrFrom  pgtype.Text
+	AddrTo    pgtype.Text
+	Subject   string
+	Body      *pgtype.Text
 }
 
 func (q *Queries) AddMail(ctx context.Context, arg AddMailParams) error {
 	_, err := q.db.Exec(ctx, addMail,
 		arg.MailID,
-		arg.Date,
+		arg.Timestamp,
 		arg.AddrFrom,
 		arg.AddrTo,
+		arg.Subject,
 		arg.Body,
 	)
 	return err
 }
 
 const getMail = `-- name: GetMail :one
-SELECT id, mail_id, date, addr_from, addr_to, body, messages, last_message_extraction, reply_to, thread FROM mail
+SELECT id, mail_id, timestamp, addr_from, addr_to, subject, body, messages, last_message_extraction, reply_to, thread FROM mail
 WHERE id = $1 LIMIT 1
 `
 
-func (q *Queries) GetMail(ctx context.Context, id int64) (Mail, error) {
+func (q *Queries) GetMail(ctx context.Context, id int64) (*Mail, error) {
 	row := q.db.QueryRow(ctx, getMail, id)
 	var i Mail
 	err := row.Scan(
 		&i.ID,
 		&i.MailID,
-		&i.Date,
+		&i.Timestamp,
 		&i.AddrFrom,
 		&i.AddrTo,
+		&i.Subject,
 		&i.Body,
 		&i.Messages,
 		&i.LastMessageExtraction,
 		&i.ReplyTo,
 		&i.Thread,
 	)
-	return i, err
+	return &i, err
+}
+
+const getMailsRequiringMessageExtraction = `-- name: GetMailsRequiringMessageExtraction :many
+SELECT id, mail_id, timestamp, addr_from, addr_to, subject, body, messages, last_message_extraction, reply_to, thread FROM mail
+where messages ->> 'messages' IS NULL
+`
+
+func (q *Queries) GetMailsRequiringMessageExtraction(ctx context.Context) ([]*Mail, error) {
+	rows, err := q.db.Query(ctx, getMailsRequiringMessageExtraction)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []*Mail
+	for rows.Next() {
+		var i Mail
+		if err := rows.Scan(
+			&i.ID,
+			&i.MailID,
+			&i.Timestamp,
+			&i.AddrFrom,
+			&i.AddrTo,
+			&i.Subject,
+			&i.Body,
+			&i.Messages,
+			&i.LastMessageExtraction,
+			&i.ReplyTo,
+			&i.Thread,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, &i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const mailCount = `-- name: MailCount :one
@@ -68,4 +109,20 @@ func (q *Queries) MailCount(ctx context.Context) (int64, error) {
 	var count int64
 	err := row.Scan(&count)
 	return count, err
+}
+
+const updateExtractedMessages = `-- name: UpdateExtractedMessages :exec
+UPDATE mail
+SET messages = $2, last_message_extraction = CURRENT_TIMESTAMP
+WHERE id = $1
+`
+
+type UpdateExtractedMessagesParams struct {
+	ID       int64
+	Messages *db.ExtractedMessages
+}
+
+func (q *Queries) UpdateExtractedMessages(ctx context.Context, arg UpdateExtractedMessagesParams) error {
+	_, err := q.db.Exec(ctx, updateExtractedMessages, arg.ID, arg.Messages)
+	return err
 }
