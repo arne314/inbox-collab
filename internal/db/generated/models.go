@@ -11,10 +11,13 @@ import (
 
 type Mail struct {
 	ID                    int64
-	MailID                string
+	HeaderID              string
+	HeaderInReplyTo       pgtype.Text
+	HeaderReferences      []string
 	Timestamp             pgtype.Timestamp
+	NameFrom              pgtype.Text
 	AddrFrom              pgtype.Text
-	AddrTo                pgtype.Text
+	AddrTo                []string
 	Subject               string
 	Body                  *pgtype.Text
 	Messages              *db.ExtractedMessages

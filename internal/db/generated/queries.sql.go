@@ -13,24 +13,30 @@ import (
 )
 
 const addMail = `-- name: AddMail :exec
-INSERT INTO mail (mail_id, timestamp, addr_from, addr_to, subject, body)
-VALUES ($1, $2, $3, $4, $5, $6)
-ON CONFLICT (mail_id) DO NOTHING
+INSERT INTO mail (header_id, header_in_reply_to, header_references, timestamp, name_from, addr_from, addr_to, subject, body)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+ON CONFLICT (header_id) DO NOTHING
 `
 
 type AddMailParams struct {
-	MailID    string
-	Timestamp pgtype.Timestamp
-	AddrFrom  pgtype.Text
-	AddrTo    pgtype.Text
-	Subject   string
-	Body      *pgtype.Text
+	HeaderID         string
+	HeaderInReplyTo  pgtype.Text
+	HeaderReferences []string
+	Timestamp        pgtype.Timestamp
+	NameFrom         pgtype.Text
+	AddrFrom         pgtype.Text
+	AddrTo           []string
+	Subject          string
+	Body             *pgtype.Text
 }
 
 func (q *Queries) AddMail(ctx context.Context, arg AddMailParams) error {
 	_, err := q.db.Exec(ctx, addMail,
-		arg.MailID,
+		arg.HeaderID,
+		arg.HeaderInReplyTo,
+		arg.HeaderReferences,
 		arg.Timestamp,
+		arg.NameFrom,
 		arg.AddrFrom,
 		arg.AddrTo,
 		arg.Subject,
@@ -40,7 +46,7 @@ func (q *Queries) AddMail(ctx context.Context, arg AddMailParams) error {
 }
 
 const getMail = `-- name: GetMail :one
-SELECT id, mail_id, timestamp, addr_from, addr_to, subject, body, messages, last_message_extraction, reply_to, thread FROM mail
+SELECT id, header_id, header_in_reply_to, header_references, timestamp, name_from, addr_from, addr_to, subject, body, messages, last_message_extraction, reply_to, thread FROM mail
 WHERE id = $1 LIMIT 1
 `
 
@@ -49,8 +55,11 @@ func (q *Queries) GetMail(ctx context.Context, id int64) (*Mail, error) {
 	var i Mail
 	err := row.Scan(
 		&i.ID,
-		&i.MailID,
+		&i.HeaderID,
+		&i.HeaderInReplyTo,
+		&i.HeaderReferences,
 		&i.Timestamp,
+		&i.NameFrom,
 		&i.AddrFrom,
 		&i.AddrTo,
 		&i.Subject,
@@ -64,7 +73,7 @@ func (q *Queries) GetMail(ctx context.Context, id int64) (*Mail, error) {
 }
 
 const getMailsRequiringMessageExtraction = `-- name: GetMailsRequiringMessageExtraction :many
-SELECT id, mail_id, timestamp, addr_from, addr_to, subject, body, messages, last_message_extraction, reply_to, thread FROM mail
+SELECT id, header_id, header_in_reply_to, header_references, timestamp, name_from, addr_from, addr_to, subject, body, messages, last_message_extraction, reply_to, thread FROM mail
 where messages ->> 'messages' IS NULL
 `
 
@@ -79,8 +88,11 @@ func (q *Queries) GetMailsRequiringMessageExtraction(ctx context.Context) ([]*Ma
 		var i Mail
 		if err := rows.Scan(
 			&i.ID,
-			&i.MailID,
+			&i.HeaderID,
+			&i.HeaderInReplyTo,
+			&i.HeaderReferences,
 			&i.Timestamp,
+			&i.NameFrom,
 			&i.AddrFrom,
 			&i.AddrTo,
 			&i.Subject,
