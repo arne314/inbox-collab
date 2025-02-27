@@ -2,6 +2,8 @@ package mail
 
 import (
 	"fmt"
+	"regexp"
+	"strings"
 	"time"
 
 	"github.com/emersion/go-imap/v2"
@@ -13,32 +15,46 @@ import (
 )
 
 type Mail struct {
-	Id          string
-	AddrTo      string
+	NameFrom    string
 	AddrFrom    string
 	Subject     string
 	Date        time.Time
 	Text        string
+	MessageId   string
+	InReplyTo   string
+	References  []string
+	AddrTo      []string
 	Attachments []string
 }
 
 func (m *Mail) String() string {
 	return fmt.Sprintf(
 		"Mail %v on %v from %v to %v with subject %v and attachments %v",
-		m.Id, m.Date, m.AddrFrom, m.AddrTo, m.Subject, m.Attachments,
+		m.MessageId, m.Date, m.AddrFrom, m.AddrTo, m.Subject, m.Attachments,
 	)
 }
 
 type MailFetcher struct {
-	name        string
-	config      *config.MailConfig
-	client      *imapclient.Client
-	isIdle      bool
-	idleCommand *imapclient.IdleCommand
+	name          string
+	config        *config.MailConfig
+	client        *imapclient.Client
+	idleCommand   *imapclient.IdleCommand
+	isIdle        bool
+	nameFromRegex *regexp.Regexp
+	addressRegex  *regexp.Regexp
+	idRegex       *regexp.Regexp
 }
 
 func NewMailFetcher(name string, cfg *config.MailConfig) *MailFetcher {
-	mailfetcher := &MailFetcher{name: name, config: cfg}
+	mailfetcher := &MailFetcher{
+		name:          name,
+		config:        cfg,
+		nameFromRegex: regexp.MustCompile(`(?i)\"?\s*([^<>\" ][^<>\"]+[^<>\" ])\"?\s*<`),
+		addressRegex: regexp.MustCompile(
+			`(?i)<?([a-zA-Z0-9%+-][a-zA-Z0-9.+-_{}\(\)\[\]'"\\#\$%\^\?/=&!\*\|~]*@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})>?`,
+		),
+		idRegex: regexp.MustCompile(`(?i)<([^@ ]+@[^@ ]+)>`),
+	}
 	return mailfetcher
 }
 
@@ -75,6 +91,42 @@ func (mf *MailFetcher) FetchMessages() []*Mail {
 	return mails
 }
 
+func (mf *MailFetcher) parseHeaderRegex(
+	regex *regexp.Regexp,
+	header string,
+	allowEmpty bool,
+	lower bool,
+) []string {
+	parsed := regex.FindAllStringSubmatch(header, -1)
+	if !allowEmpty && len(parsed) == 0 {
+		return []string{""}
+	}
+	matches := make([]string, len(parsed))
+	for i, match := range parsed {
+		matches[i] = match[1]
+		if lower {
+			matches[i] = strings.ToLower(matches[i])
+		}
+	}
+	return matches
+}
+
+func (mf *MailFetcher) parseAddresses(header string, allowEmpty bool) []string {
+	return mf.parseHeaderRegex(mf.addressRegex, header, allowEmpty, true)
+}
+
+func (mf *MailFetcher) parseIds(header string, allowEmpty bool) []string {
+	return mf.parseHeaderRegex(mf.idRegex, header, allowEmpty, false)
+}
+
+func (mf *MailFetcher) parseNameFrom(header string) string {
+	matches := mf.nameFromRegex.FindStringSubmatch(header)
+	if matches != nil {
+		return matches[1]
+	}
+	return ""
+}
+
 func (mf *MailFetcher) parseMessage(msg *imapclient.FetchMessageData) *Mail {
 	var bodySection imapclient.FetchItemDataBodySection
 	ok := false
@@ -109,15 +161,18 @@ func (mf *MailFetcher) parseMessage(msg *imapclient.FetchMessageData) *Mail {
 		attachments = append(attachments, att.FileName)
 	}
 	parsedMail := &Mail{
-		Id:          envelope.GetHeader("Message-ID"),
-		AddrTo:      envelope.GetHeader("To"),
-		AddrFrom:    envelope.GetHeader("From"),
+		MessageId:   mf.parseIds(envelope.GetHeader("Message-ID"), false)[0],
+		InReplyTo:   mf.parseIds(envelope.GetHeader("In-Reply-To"), false)[0],
+		References:  mf.parseIds(envelope.GetHeader("References"), true),
+		NameFrom:    mf.parseNameFrom(envelope.GetHeader("From")),
+		AddrFrom:    mf.parseAddresses(envelope.GetHeader("From"), false)[0],
+		AddrTo:      mf.parseAddresses(envelope.GetHeader("To"), true),
 		Subject:     envelope.GetHeader("Subject"),
 		Date:        date,
 		Text:        envelope.Text,
 		Attachments: attachments,
 	}
-	if parsedMail.Id == "" || parsedMail.Text == "" {
+	if parsedMail.MessageId == "" || parsedMail.Text == "" {
 		log.Errorf("Skipping invalid mail for %v: %v", mf.name, parsedMail)
 		return nil
 	}

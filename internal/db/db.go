@@ -40,12 +40,15 @@ func (dh *DbHandler) Setup(cfg *config.Config) {
 func (dh *DbHandler) AddMails(mails []*db.Mail) {
 	for _, mail := range mails {
 		err := dh.queries.AddMail(context.Background(), db.AddMailParams{
-			MailID:    mail.MailID,
-			Timestamp: mail.Timestamp,
-			AddrFrom:  mail.AddrFrom,
-			AddrTo:    mail.AddrTo,
-			Subject:   mail.Subject,
-			Body:      mail.Body,
+			HeaderID:         mail.HeaderID,
+			HeaderInReplyTo:  mail.HeaderInReplyTo,
+			HeaderReferences: mail.HeaderReferences,
+			Timestamp:        mail.Timestamp,
+			NameFrom:         mail.NameFrom,
+			AddrFrom:         mail.AddrFrom,
+			AddrTo:           mail.AddrTo,
+			Subject:          mail.Subject,
+			Body:             mail.Body,
 		})
 		if err != nil {
 			log.Errorf("Error adding mail to db: %v", err)

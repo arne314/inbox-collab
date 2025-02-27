@@ -6,10 +6,13 @@ CREATE TABLE thread (
 
 CREATE TABLE mail (
     id BIGSERIAL PRIMARY KEY,
-    mail_id VARCHAR(320) UNIQUE NOT NULL,
+    header_id TEXT UNIQUE NOT NULL,
+    header_in_reply_to TEXT,
+    header_references TEXT[],
     timestamp TIMESTAMP NOT NULL,
+    name_from TEXT,
     addr_from TEXT,
-    addr_to TEXT,
+    addr_to TEXT[],
     subject TEXT NOT NULL,
     body TEXT,
     messages JSONB,

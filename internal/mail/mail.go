@@ -31,8 +31,8 @@ func (mh *MailHandler) Run() {
 
 func (mh *MailHandler) FetchMessages(mails chan []*Mail) {
 	var wg sync.WaitGroup
+	wg.Add(len(mh.fetchers))
 	for _, fetcher := range mh.fetchers {
-		wg.Add(1)
 		go func() {
 			mails <- fetcher.FetchMessages()
 			wg.Done()
@@ -43,12 +43,14 @@ func (mh *MailHandler) FetchMessages(mails chan []*Mail) {
 }
 
 func (mh *MailHandler) Stop(waitGroup *sync.WaitGroup) {
-	waitGroup.Add(len(mh.fetchers))
+	var wg sync.WaitGroup
+	wg.Add(len(mh.fetchers))
 	for _, fetcher := range mh.fetchers {
 		go func() {
 			fetcher.Logout()
-			waitGroup.Done()
+			wg.Done()
 		}()
 	}
+	wg.Wait()
 	waitGroup.Done()
 }

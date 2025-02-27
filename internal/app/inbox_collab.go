@@ -41,12 +41,15 @@ func (ic *InboxCollab) fetchMessages() {
 		var modelled []*model.Mail
 		for _, mail := range mails {
 			modelled = append(modelled, &model.Mail{
-				MailID:    mail.Id,
-				Subject:   mail.Subject,
-				Timestamp: pgtype.Timestamp{Time: mail.Date, Valid: true},
-				AddrFrom:  pgtype.Text{String: mail.AddrFrom, Valid: true},
-				AddrTo:    pgtype.Text{String: mail.AddrTo, Valid: true},
-				Body:      &pgtype.Text{String: mail.Text, Valid: true},
+				HeaderID:         mail.MessageId,
+				HeaderInReplyTo:  pgtype.Text{String: mail.InReplyTo, Valid: true},
+				HeaderReferences: mail.References,
+				Subject:          mail.Subject,
+				Timestamp:        pgtype.Timestamp{Time: mail.Date, Valid: true},
+				NameFrom:         pgtype.Text{String: mail.NameFrom, Valid: true},
+				AddrFrom:         pgtype.Text{String: mail.AddrFrom, Valid: true},
+				AddrTo:           mail.AddrTo,
+				Body:             &pgtype.Text{String: mail.Text, Valid: true},
 			})
 		}
 		ic.dbHandler.AddMails(modelled)
