@@ -45,6 +45,40 @@ func (q *Queries) AddMail(ctx context.Context, arg AddMailParams) error {
 	return err
 }
 
+const addThread = `-- name: AddThread :one
+INSERT INTO thread (enabled, last_message, first_mail, last_mail)
+VALUES (true, CURRENT_TIMESTAMP, $1, $1)
+RETURNING id, enabled, last_message, first_mail, last_mail
+`
+
+func (q *Queries) AddThread(ctx context.Context, firstMail pgtype.Int8) (*Thread, error) {
+	row := q.db.QueryRow(ctx, addThread, firstMail)
+	var i Thread
+	err := row.Scan(
+		&i.ID,
+		&i.Enabled,
+		&i.LastMessage,
+		&i.FirstMail,
+		&i.LastMail,
+	)
+	return &i, err
+}
+
+const autoUpdateMailReplyTo = `-- name: AutoUpdateMailReplyTo :execrows
+UPDATE mail
+SET reply_to = m.id
+FROM mail m
+WHERE mail.thread IS NULL AND mail.header_in_reply_to = m.header_id
+`
+
+func (q *Queries) AutoUpdateMailReplyTo(ctx context.Context) (int64, error) {
+	result, err := q.db.Exec(ctx, autoUpdateMailReplyTo)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const getMail = `-- name: GetMail :one
 SELECT id, header_id, header_in_reply_to, header_references, timestamp, name_from, addr_from, addr_to, subject, body, messages, last_message_extraction, reply_to, thread FROM mail
 WHERE id = $1 LIMIT 1
@@ -74,11 +108,94 @@ func (q *Queries) GetMail(ctx context.Context, id int64) (*Mail, error) {
 
 const getMailsRequiringMessageExtraction = `-- name: GetMailsRequiringMessageExtraction :many
 SELECT id, header_id, header_in_reply_to, header_references, timestamp, name_from, addr_from, addr_to, subject, body, messages, last_message_extraction, reply_to, thread FROM mail
-where messages ->> 'messages' IS NULL
+WHERE messages ->> 'messages' IS NULL
 `
 
 func (q *Queries) GetMailsRequiringMessageExtraction(ctx context.Context) ([]*Mail, error) {
 	rows, err := q.db.Query(ctx, getMailsRequiringMessageExtraction)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []*Mail
+	for rows.Next() {
+		var i Mail
+		if err := rows.Scan(
+			&i.ID,
+			&i.HeaderID,
+			&i.HeaderInReplyTo,
+			&i.HeaderReferences,
+			&i.Timestamp,
+			&i.NameFrom,
+			&i.AddrFrom,
+			&i.AddrTo,
+			&i.Subject,
+			&i.Body,
+			&i.Messages,
+			&i.LastMessageExtraction,
+			&i.ReplyTo,
+			&i.Thread,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, &i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const getMailsRequiringSorting = `-- name: GetMailsRequiringSorting :many
+SELECT id, header_id, header_in_reply_to, header_references, timestamp, name_from, addr_from, addr_to, subject, body, messages, last_message_extraction, reply_to, thread FROM mail
+WHERE thread IS NULL
+ORDER BY timestamp
+`
+
+func (q *Queries) GetMailsRequiringSorting(ctx context.Context) ([]*Mail, error) {
+	rows, err := q.db.Query(ctx, getMailsRequiringSorting)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []*Mail
+	for rows.Next() {
+		var i Mail
+		if err := rows.Scan(
+			&i.ID,
+			&i.HeaderID,
+			&i.HeaderInReplyTo,
+			&i.HeaderReferences,
+			&i.Timestamp,
+			&i.NameFrom,
+			&i.AddrFrom,
+			&i.AddrTo,
+			&i.Subject,
+			&i.Body,
+			&i.Messages,
+			&i.LastMessageExtraction,
+			&i.ReplyTo,
+			&i.Thread,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, &i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const getReferencedThreadParent = `-- name: GetReferencedThreadParent :many
+SELECT id, header_id, header_in_reply_to, header_references, timestamp, name_from, addr_from, addr_to, subject, body, messages, last_message_extraction, reply_to, thread FROM mail
+WHERE thread IS NOT NULL AND header_id = ANY($1::text[])
+ORDER BY timestamp DESC
+LIMIT 1
+`
+
+func (q *Queries) GetReferencedThreadParent(ctx context.Context, dollar_1 []string) ([]*Mail, error) {
+	rows, err := q.db.Query(ctx, getReferencedThreadParent, dollar_1)
 	if err != nil {
 		return nil, err
 	}
@@ -136,5 +253,50 @@ type UpdateExtractedMessagesParams struct {
 
 func (q *Queries) UpdateExtractedMessages(ctx context.Context, arg UpdateExtractedMessagesParams) error {
 	_, err := q.db.Exec(ctx, updateExtractedMessages, arg.ID, arg.Messages)
+	return err
+}
+
+const updateMailSorting = `-- name: UpdateMailSorting :exec
+UPDATE mail
+SET reply_to = $3, thread = $2
+WHERE id = $1
+`
+
+type UpdateMailSortingParams struct {
+	ID      int64
+	Thread  pgtype.Int8
+	ReplyTo pgtype.Int8
+}
+
+func (q *Queries) UpdateMailSorting(ctx context.Context, arg UpdateMailSortingParams) error {
+	_, err := q.db.Exec(ctx, updateMailSorting, arg.ID, arg.Thread, arg.ReplyTo)
+	return err
+}
+
+const updateThreadLastMail = `-- name: UpdateThreadLastMail :exec
+UPDATE thread
+SET enabled = true, last_message = GREATEST(last_message, $3), last_mail = $2
+WHERE id = $1
+`
+
+type UpdateThreadLastMailParams struct {
+	ID          int64
+	LastMail    pgtype.Int8
+	LastMessage pgtype.Timestamp
+}
+
+func (q *Queries) UpdateThreadLastMail(ctx context.Context, arg UpdateThreadLastMailParams) error {
+	_, err := q.db.Exec(ctx, updateThreadLastMail, arg.ID, arg.LastMail, arg.LastMessage)
+	return err
+}
+
+const updateThreadLastMessage = `-- name: UpdateThreadLastMessage :exec
+UPDATE thread
+SET last_message = CURRENT_TIMESTAMP
+WHERE id = $1
+`
+
+func (q *Queries) UpdateThreadLastMessage(ctx context.Context, id int64) error {
+	_, err := q.db.Exec(ctx, updateThreadLastMessage, id)
 	return err
 }
