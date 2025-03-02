@@ -57,31 +57,61 @@ func (ic *InboxCollab) fetchMessages() {
 	log.Info("Added fetched messages to db")
 }
 
-func (ic *InboxCollab) extractMessages() {
+func (ic *InboxCollab) extractMessages(mail *model.Mail) {
+	ic.llm.ExtractMessages(mail)
+	if mail.Messages == nil || mail.Messages.Messages == nil {
+		log.Errorf("Error extracting messages for mail %v", mail.ID)
+	} else {
+		ic.dbHandler.UpdateExtractedMessages(mail)
+	}
+}
+
+func (ic *InboxCollab) extractFetchedMessages() {
 	var wg sync.WaitGroup
 	mails := ic.dbHandler.GetMailsRequiringMessageExtraction()
-	if len(mails) != 0 {
-		log.Infof("Extracting messages from %v mails...", len(mails))
-		wg.Add(len(mails))
-		for _, mail := range mails {
-			go func() {
-				ic.llm.ExtractMessages(mail)
-				if mail.Messages == nil || mail.Messages.Messages == nil {
-					log.Errorf("Error extracting messages for mail %v", mail.ID)
-				} else {
-					ic.dbHandler.UpdateExtractedMessages(mail)
-				}
-				wg.Done()
-			}()
-		}
-		wg.Wait()
-		log.Infof("Done extracting messages from %v mails", len(mails))
+	if len(mails) == 0 {
+		return
 	}
+	log.Infof("Extracting messages from %v mails...", len(mails))
+	wg.Add(len(mails))
+	for _, mail := range mails {
+		go func() {
+			ic.extractMessages(mail)
+			wg.Done()
+		}()
+	}
+	wg.Wait()
+	log.Infof("Done extracting messages from %v mails", len(mails))
+}
+
+func (ic *InboxCollab) processExtractedMessages() {
+	ic.dbHandler.AutoUpdateMailReplyTo()
+	mails := ic.dbHandler.GetMailsRequiringSorting()
+	if len(mails) == 0 {
+		return
+	}
+	log.Infof("Sorting %v mails...", len(mails))
+	for _, mail := range mails {
+		var threadParent *model.Mail
+		if mail.ReplyTo.Valid {
+			threadParent = ic.dbHandler.GetMailById(mail.ReplyTo.Int64)
+		}
+		if threadParent == nil {
+			threadParent = ic.dbHandler.GetReferencedThreadParent(mail)
+		}
+		if threadParent != nil && threadParent.Thread.Valid {
+			ic.dbHandler.AddMailToThread(mail, threadParent.Thread.Int64)
+			continue
+		}
+		ic.dbHandler.CreateThread(mail)
+	}
+	log.Infof("Done sorting %v mails", len(mails))
 }
 
 func (ic *InboxCollab) Run() {
 	ic.fetchMessages()
-	ic.extractMessages()
+	ic.extractFetchedMessages()
+	ic.processExtractedMessages()
 }
 
 func (ic *InboxCollab) Stop(waitGroup *sync.WaitGroup) {

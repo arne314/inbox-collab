@@ -12,10 +12,47 @@ ON CONFLICT (header_id) DO NOTHING;
 
 -- name: GetMailsRequiringMessageExtraction :many
 SELECT * FROM mail
-where messages ->> 'messages' IS NULL;
+WHERE messages ->> 'messages' IS NULL;
+
+-- name: GetMailsRequiringSorting :many
+SELECT * FROM mail
+WHERE thread IS NULL
+ORDER BY timestamp;
+
+-- name: GetReferencedThreadParent :many
+SELECT * FROM mail
+WHERE thread IS NOT NULL AND header_id = ANY($1::text[])
+ORDER BY timestamp DESC
+LIMIT 1;
 
 -- name: UpdateExtractedMessages :exec
 UPDATE mail
 SET messages = $2, last_message_extraction = CURRENT_TIMESTAMP
+WHERE id = $1;
+
+-- name: UpdateMailSorting :exec
+UPDATE mail
+SET reply_to = $3, thread = $2
+WHERE id = $1;
+
+-- name: AutoUpdateMailReplyTo :execrows
+UPDATE mail
+SET reply_to = m.id
+FROM mail m
+WHERE mail.thread IS NULL AND mail.header_in_reply_to = m.header_id;
+
+-- name: AddThread :one
+INSERT INTO thread (enabled, last_message, first_mail, last_mail)
+VALUES (true, CURRENT_TIMESTAMP, $1, $1)
+RETURNING *;
+
+-- name: UpdateThreadLastMessage :exec
+UPDATE thread
+SET last_message = CURRENT_TIMESTAMP
+WHERE id = $1;
+
+-- name: UpdateThreadLastMail :exec
+UPDATE thread
+SET enabled = true, last_message = GREATEST(last_message, $3), last_mail = $2
 WHERE id = $1;
 

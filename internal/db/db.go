@@ -5,6 +5,7 @@ import (
 	"sync"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgtype"
 
 	config "github.com/arne314/inbox-collab/internal/config"
 	db "github.com/arne314/inbox-collab/internal/db/generated"
@@ -57,14 +58,33 @@ func (dh *DbHandler) AddMails(mails []*db.Mail) {
 	}
 }
 
-func (dh *DbHandler) GetMailsRequiringMessageExtraction() []*db.Mail {
-	mails, err := dh.queries.GetMailsRequiringMessageExtraction(context.Background())
+func (dh *DbHandler) GetMailById(id int64) *db.Mail {
+	mail, err := dh.queries.GetMail(context.Background(), id)
 	if err != nil {
-		log.Errorf("Error fetching mails requiring message extraction: %v", err)
+		log.Errorf("Failed to fetch mail by id %v: %v", id, err)
+		return nil
+	}
+	return mail
+}
+
+type getMailsQuery func(ctx context.Context) ([]*db.Mail, error)
+
+func getMails(query getMailsQuery, mailTypeLogMsg string) []*db.Mail {
+	mails, err := query(context.Background())
+	if err != nil {
+		log.Errorf("Error fetching mails %v: %v", mailTypeLogMsg, err)
 		return []*db.Mail{}
 	}
-	log.Infof("Loaded %v mails requiring message extraction from db", len(mails))
+	log.Infof("Loaded %v mails %v from db", len(mails), mailTypeLogMsg)
 	return mails
+}
+
+func (dh *DbHandler) GetMailsRequiringMessageExtraction() []*db.Mail {
+	return getMails(dh.queries.GetMailsRequiringMessageExtraction, "requiring message extraction")
+}
+
+func (dh *DbHandler) GetMailsRequiringSorting() []*db.Mail {
+	return getMails(dh.queries.GetMailsRequiringSorting, "requiring sorting")
 }
 
 func (dh *DbHandler) UpdateExtractedMessages(mail *db.Mail) {
@@ -80,6 +100,70 @@ func (dh *DbHandler) UpdateExtractedMessages(mail *db.Mail) {
 		return
 	}
 	log.Infof("Updated extracted messages of mail %v", mail.ID)
+}
+
+func (dh *DbHandler) AutoUpdateMailReplyTo() {
+	count, err := dh.queries.AutoUpdateMailReplyTo(context.Background())
+	if err != nil {
+		log.Errorf("Error auto updating reply_to columns: %v", err)
+		return
+	}
+	log.Infof("Auto updated %v mail reply_to columns", count)
+}
+
+func (dh *DbHandler) GetReferencedThreadParent(mail *db.Mail) *db.Mail {
+	rows, err := dh.queries.GetReferencedThreadParent(context.Background(), mail.HeaderReferences)
+	if err != nil {
+		log.Errorf("Error getting referenced thread parent for mail %v: %v", mail.ID, err)
+		return nil
+	}
+	if len(rows) == 0 {
+		return nil
+	}
+	return rows[0]
+}
+
+func (dh *DbHandler) CreateThread(mail *db.Mail) {
+	thread, err := dh.queries.AddThread(
+		context.Background(),
+		pgtype.Int8{Int64: mail.ID, Valid: true},
+	)
+	if err != nil {
+		log.Errorf("Error creating new thread for mail %v: %v", mail.ID, err)
+		return
+	}
+	err = dh.queries.UpdateMailSorting(context.Background(), db.UpdateMailSortingParams{
+		ID:      mail.ID,
+		Thread:  pgtype.Int8{Int64: thread.ID, Valid: true},
+		ReplyTo: mail.ReplyTo,
+	})
+	if err != nil {
+		log.Errorf("Error setting thread of mail %v to %v: %v", mail.ID, thread.ID, err)
+		return
+	}
+	log.Infof("Created new thread with mail %v", mail.ID)
+}
+
+func (dh *DbHandler) AddMailToThread(mail *db.Mail, threadId int64) {
+	err := dh.queries.UpdateMailSorting(context.Background(), db.UpdateMailSortingParams{
+		ID:      mail.ID,
+		Thread:  pgtype.Int8{Int64: threadId, Valid: true},
+		ReplyTo: mail.ReplyTo,
+	})
+	if err != nil {
+		log.Errorf("Error setting thread of mail %v to %v: %v", mail.ID, threadId, err)
+		return
+	}
+	err = dh.queries.UpdateThreadLastMail(context.Background(), db.UpdateThreadLastMailParams{
+		ID:          threadId,
+		LastMail:    pgtype.Int8{Int64: mail.ID, Valid: true},
+		LastMessage: pgtype.Timestamp{Time: mail.Timestamp.Time, Valid: true},
+	})
+	if err != nil {
+		log.Errorf("Error setting last mail of thread %v to %v: %v", threadId, mail.ID, err)
+		return
+	}
+	log.Infof("Added mail %v to thread %v", mail.ID, threadId)
 }
 
 func (dh *DbHandler) Stop(waitGroup *sync.WaitGroup) {
