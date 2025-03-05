@@ -5,6 +5,7 @@ import langchain
 from langchain.output_parsers import OutputFixingParser
 from langchain_core.exceptions import OutputParserException
 from langchain_core.prompts import PromptTemplate
+from langchain_core.rate_limiters import InMemoryRateLimiter
 from langchain_core.runnables import Runnable
 from langchain_ollama import OllamaLLM
 from langchain_openai import ChatOpenAI
@@ -15,7 +16,7 @@ from .prompt import BaseParser, MessageSchema, ResponseSchema, template
 class MessageParser:
     chain: Runnable
     fixing_parser: OutputFixingParser
-    deub: bool
+    debug: bool
     semaphore: Semaphore
     max_concurrent_prompts: int
 
@@ -23,7 +24,7 @@ class MessageParser:
         self.debug = debug
         self.max_concurrent_prompts = config.get("max_concurrent_prompts", 5)
         self.semaphore = Semaphore(self.max_concurrent_prompts)
-        langchain.debug = self.debug
+        langchain.debug = self.debug  # pyright: ignore
 
         base_parser = BaseParser()
         llm = OllamaLLM(
@@ -37,11 +38,19 @@ class MessageParser:
 
         if (llm_config_model := config.get("openai_model")) is not None:
             assert llm.temperature is not None
+            request_limiter = None
+            if (rate_limit := config.get("rate_limit")) is not None:
+                request_limiter = InMemoryRateLimiter(
+                    requests_per_second=rate_limit,
+                    max_bucket_size=config.get("rate_limit_max_bucket", 1),
+                )
             llm = ChatOpenAI(
                 model=llm_config_model,
                 base_url=config.get("openai_url"),
                 api_key=config.get("openai_api_key"),
                 temperature=llm.temperature,
+                rate_limiter=request_limiter,
+                max_retries=config.get("openai_max_retries", 10),
             )
         elif (llm_config_model := config.get("ollama_model")) is not None:
             llm.model = llm_config_model
@@ -57,6 +66,8 @@ class MessageParser:
                 model=llm.model_name,
                 base_url=llm.openai_api_base,
                 api_key=llm.openai_api_key,
+                rate_limiter=llm.rate_limiter,
+                max_retries=llm.max_retries,
                 temperature=0.5,
             )
         assert llm_retry is not None, "Retry llm could not be set, check you config"
