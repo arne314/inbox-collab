@@ -32,10 +32,12 @@ func main() {
 	)
 	flag.Parse()
 	config.Load()
-
 	dbHandler.Setup(config)
-	mailHandler.Setup(config)
-	matrixHandler.Setup(config, *verifyMatrixSession)
+
+	waitGroup.Add(2)
+	go mailHandler.Setup(config, waitGroup)
+	go matrixHandler.Setup(config, *verifyMatrixSession, waitGroup)
+	waitGroup.Wait()
 	inboxCollab.Setup(config, dbHandler, mailHandler, matrixHandler)
 
 	go mailHandler.Run()
@@ -52,10 +54,10 @@ func main() {
 
 func shutdown() {
 	waitGroup.Add(4)
-	dbHandler.Stop(waitGroup)
-	mailHandler.Stop(waitGroup)
-	matrixHandler.Stop(waitGroup)
-	inboxCollab.Stop(waitGroup)
+	go dbHandler.Stop(waitGroup)
+	go mailHandler.Stop(waitGroup)
+	go matrixHandler.Stop(waitGroup)
+	go inboxCollab.Stop(waitGroup)
 	waitGroup.Wait()
 	log.Info("Shutdown successful")
 }

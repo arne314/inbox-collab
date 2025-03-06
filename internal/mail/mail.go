@@ -11,18 +11,19 @@ type MailHandler struct {
 	fetchers []*MailFetcher
 }
 
-func (mh *MailHandler) Setup(cfg *config.Config) {
-	var wg sync.WaitGroup
+func (mh *MailHandler) Setup(cfg *config.Config, wg *sync.WaitGroup) {
+	defer wg.Done()
+	var waitGroup sync.WaitGroup
 	for name, c := range cfg.Mail {
 		fetcher := NewMailFetcher(name, c)
-		wg.Add(1)
+		waitGroup.Add(1)
 		go func() {
 			fetcher.Login()
-			wg.Done()
+			waitGroup.Done()
 		}()
 		mh.fetchers = append(mh.fetchers, fetcher)
 	}
-	wg.Wait()
+	waitGroup.Wait()
 	log.Infof("Setup MailHandler")
 }
 
@@ -42,15 +43,15 @@ func (mh *MailHandler) FetchMessages(mails chan []*Mail) {
 	close(mails)
 }
 
-func (mh *MailHandler) Stop(waitGroup *sync.WaitGroup) {
-	var wg sync.WaitGroup
-	wg.Add(len(mh.fetchers))
+func (mh *MailHandler) Stop(wg *sync.WaitGroup) {
+	defer wg.Done()
+	var waitGroup sync.WaitGroup
+	waitGroup.Add(len(mh.fetchers))
 	for _, fetcher := range mh.fetchers {
 		go func() {
 			fetcher.Logout()
-			wg.Done()
+			waitGroup.Done()
 		}()
 	}
-	wg.Wait()
-	waitGroup.Done()
+	waitGroup.Wait()
 }

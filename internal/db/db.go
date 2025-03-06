@@ -167,9 +167,9 @@ func (dh *DbHandler) AddMailToThread(mail *db.Mail, threadId int64) {
 }
 
 func (dh *DbHandler) Stop(waitGroup *sync.WaitGroup) {
+	defer waitGroup.Done()
 	err := dh.connection.Close(context.Background())
 	if err != nil {
 		log.Errorf("Failed to close database connection: %v", err)
 	}
-	waitGroup.Done()
 }

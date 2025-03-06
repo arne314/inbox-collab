@@ -72,7 +72,8 @@ func (mh MatrixHandler) ShowSAS(
 	}()
 }
 
-func (mh *MatrixHandler) Setup(cfg *config.Config, autoVerifySession bool) {
+func (mh *MatrixHandler) Setup(cfg *config.Config, autoVerifySession bool, wg *sync.WaitGroup) {
+	defer wg.Done()
 	client, err := mautrix.NewClient(cfg.MatrixHomeServer, "", "")
 	mh.client = client
 	if err != nil {
@@ -130,16 +131,18 @@ func (mh *MatrixHandler) Setup(cfg *config.Config, autoVerifySession bool) {
 	}
 	mh.verificationHelper = verificationHelper
 	mh.autoVerifySession = autoVerifySession
+	log.Info("Logged into matrix")
 }
 
 func (mh *MatrixHandler) Run() {
 	err := mh.client.Sync()
 	if err != nil {
-		log.Fatalf("Error syncing with matrix server: ", err)
+		log.Fatalf("Error syncing with matrix server: %v", err)
 	}
 }
 
 func (mh *MatrixHandler) Stop(waitGroup *sync.WaitGroup) {
+	defer waitGroup.Done()
 	mh.client.StopSync()
-	waitGroup.Done()
+	log.Info("Stopped matrix sync")
 }

@@ -115,5 +115,5 @@ func (ic *InboxCollab) Run() {
 }
 
 func (ic *InboxCollab) Stop(waitGroup *sync.WaitGroup) {
-	waitGroup.Done()
+	defer waitGroup.Done()
 }
