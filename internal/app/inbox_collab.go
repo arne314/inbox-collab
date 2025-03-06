@@ -13,6 +13,8 @@ import (
 	"github.com/arne314/inbox-collab/internal/matrix"
 )
 
+var waitGroup *sync.WaitGroup = &sync.WaitGroup{}
+
 type InboxCollab struct {
 	config        *cfg.Config
 	dbHandler     *db.DbHandler
@@ -21,17 +23,39 @@ type InboxCollab struct {
 	llm           *LLM
 }
 
+type FetcherStateStorageImpl struct {
+	getState  func(id string) (uint32, uint32)
+	saveState func(id string, uidLast uint32, uidValidity uint32)
+}
+
+func (f FetcherStateStorageImpl) GetState(id string) (uint32, uint32) {
+	return f.getState(id)
+}
+
+func (f FetcherStateStorageImpl) SaveState(id string, uidLast uint32, uidValidity uint32) {
+	f.saveState(id, uidLast, uidValidity)
+}
+
 func (ic *InboxCollab) Setup(
 	config *cfg.Config,
 	dbHandler *db.DbHandler,
 	mailHandler *mail.MailHandler,
 	matrixHandler *matrix.MatrixHandler,
+	verifyMatrixSession bool,
 ) {
 	ic.config = config
 	ic.dbHandler = dbHandler
 	ic.mailHandler = mailHandler
 	ic.matrixHandler = matrixHandler
 	ic.llm = &LLM{config: config.LLM}
+
+	waitGroup.Add(2)
+	go mailHandler.Setup(config, waitGroup, FetcherStateStorageImpl{
+		getState:  dbHandler.GetMailFetcherState,
+		saveState: dbHandler.UpdateMailFetcherState,
+	})
+	go matrixHandler.Setup(config, verifyMatrixSession, waitGroup)
+	waitGroup.Wait()
 }
 
 func (ic *InboxCollab) fetchMessages() {

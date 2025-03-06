@@ -166,6 +166,33 @@ func (dh *DbHandler) AddMailToThread(mail *db.Mail, threadId int64) {
 	log.Infof("Added mail %v to thread %v", mail.ID, threadId)
 }
 
+func (dh *DbHandler) GetMailFetcherState(id string) (uint32, uint32) {
+	ctx := context.Background()
+	state, err := dh.queries.GetFetcherState(ctx, id)
+	if err != nil {
+		log.Panicf("Error getting mail fetcher state: %v", err)
+	}
+	if len(state) == 0 {
+		err = dh.queries.AddFetcher(ctx, id)
+		if err != nil {
+			log.Panicf("Error creating mail fetcher state: %v", err)
+		}
+		return dh.GetMailFetcherState(id)
+	}
+	return uint32(state[0].UidLast), uint32(state[0].UidValidity)
+}
+
+func (dh *DbHandler) UpdateMailFetcherState(id string, uidLast uint32, uidValidity uint32) {
+	err := dh.queries.UpdateFetcherState(context.Background(), db.UpdateFetcherStateParams{
+		ID:          id,
+		UidLast:     int32(uidLast),
+		UidValidity: int32(uidValidity),
+	})
+	if err != nil {
+		log.Panicf("Error updating mail fetcher state: %v", err)
+	}
+}
+
 func (dh *DbHandler) Stop(waitGroup *sync.WaitGroup) {
 	defer waitGroup.Done()
 	err := dh.connection.Close(context.Background())

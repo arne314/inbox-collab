@@ -33,12 +33,7 @@ func main() {
 	flag.Parse()
 	config.Load()
 	dbHandler.Setup(config)
-
-	waitGroup.Add(2)
-	go mailHandler.Setup(config, waitGroup)
-	go matrixHandler.Setup(config, *verifyMatrixSession, waitGroup)
-	waitGroup.Wait()
-	inboxCollab.Setup(config, dbHandler, mailHandler, matrixHandler)
+	inboxCollab.Setup(config, dbHandler, mailHandler, matrixHandler, *verifyMatrixSession)
 
 	go mailHandler.Run()
 	go matrixHandler.Run()

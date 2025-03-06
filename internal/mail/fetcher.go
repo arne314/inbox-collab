@@ -32,6 +32,11 @@ func (m *Mail) String() string {
 	)
 }
 
+type FetcherStateStorage interface {
+	GetState(id string) (uint32, uint32)
+	SaveState(id string, uidLast uint32, uidValidity uint32)
+}
+
 type MailFetcher struct {
 	name          string
 	config        *config.MailConfig
@@ -41,18 +46,26 @@ type MailFetcher struct {
 	nameFromRegex *regexp.Regexp
 	addressRegex  *regexp.Regexp
 	idRegex       *regexp.Regexp
+
+	uidLast      uint32
+	uidValidity  uint32
+	stateStorage FetcherStateStorage
 }
 
-func NewMailFetcher(name string, cfg *config.MailConfig) *MailFetcher {
+func NewMailFetcher(
+	name string, cfg *config.MailConfig, stateStorage FetcherStateStorage,
+) *MailFetcher {
 	mailfetcher := &MailFetcher{
 		name:          name,
 		config:        cfg,
+		stateStorage:  stateStorage,
 		nameFromRegex: regexp.MustCompile(`(?i)\"?\s*([^<>\" ][^<>\"]+[^<>\" ])\"?\s*<`),
 		addressRegex: regexp.MustCompile(
 			`(?i)<?([a-zA-Z0-9%+-][a-zA-Z0-9.+-_{}\(\)\[\]'"\\#\$%\^\?/=&!\*\|~]*@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})>?`,
 		),
 		idRegex: regexp.MustCompile(`(?i)<([^@ ]+@[^@ ]+)>`),
 	}
+	mailfetcher.loadState()
 	return mailfetcher
 }
 
@@ -60,31 +73,61 @@ func (mf *MailFetcher) FetchMessages() []*Mail {
 	mf.RevokeIdle()
 	defer mf.Idle()
 
-	msgCount := mf.client.Mailbox().NumMessages
-	log.Infof("Fetching %v messages from %v...", msgCount, mf.name)
-
-	options := &imap.FetchOptions{
+	var searchCriteria *imap.SearchCriteria
+	if mf.uidsValid() {
+		uid := imap.UIDSet{}
+		uid.AddRange(imap.UID(mf.uidLast+1), 0) // 0 means no upper limit
+		searchCriteria = &imap.SearchCriteria{
+			UID: []imap.UIDSet{uid},
+		}
+	} else {
+		searchCriteria = &imap.SearchCriteria{}
+	}
+	searchOptions := &imap.SearchOptions{
+		ReturnAll:   true,
+		ReturnCount: true,
+	}
+	fetchOptions := &imap.FetchOptions{
+		UID:         true,
 		Flags:       true,
 		Envelope:    true,
 		BodySection: []*imap.FetchItemBodySection{{}},
 	}
 
-	var mails []*Mail
-	for i := 0; i < int(msgCount); i++ {
-		seqSet := imap.SeqSetNum(uint32(i + 1))
-		fetch := mf.client.Fetch(seqSet, options)
+	// search for mails
+	log.Infof("Searching for new mails for %v", mf.name)
+	search, err := mf.client.UIDSearch(searchCriteria, searchOptions).Wait()
+	if err != nil {
+		log.Errorf("Error searching for mails in %v: %v", mf.name, err)
+		return []*Mail{}
+	}
+	uids := search.AllUIDs()
+	msgCount := int(search.Count)
+	mails := make([]*Mail, 0, msgCount)
+	if msgCount == 0 {
+		log.Infof("No new mails to fetch for %v", mf.name)
+		return mails
+	}
+
+	// fetch mails
+	log.Infof("Fetching %v messages from %v...", msgCount, mf.name)
+	fetch := mf.client.Fetch(search.All, fetchOptions)
+	defer fetch.Close()
+
+	for i := 0; i < msgCount; i++ {
 		msg := fetch.Next()
 		if msg == nil {
-			log.Errorf("Fetched invalid message for %v with num %v", mf.name, i)
+			log.Errorf("Fetched invalid message for %v from id %v", mf.name, uids[i])
 			continue
 		}
 		mail := mf.parseMessage(msg)
 		if mail != nil {
 			log.Infof("MailFetcher %v fetched: %v", mf.name, mail)
 			mails = append(mails, mail)
+			mf.uidLast = max(mf.uidLast, uint32(uids[i]))
 		}
-		fetch.Close()
 	}
+	mf.saveState()
 	log.Infof("Done fetching %v messages from %v", len(mails), mf.name)
 	return mails
 }
@@ -122,13 +165,35 @@ func (mf *MailFetcher) Login() {
 		log.Fatalf("Failed to login to mailbox %v: %v", mf.name, err)
 	}
 	mf.client = client
-
-	_, err = client.Select("INBOX", nil).Wait()
-	if err != nil {
-		log.Fatalf("Failed to select inbox for %v: %v", mf.name, err)
-	}
+	mf.uidsValid() // try to select inbox
 	mf.Idle()
-	log.Infof("MailFetcher %v logged in", mf.name)
+	mf.saveState()
+	log.Infof("MailFetcher %v setup successfully", mf.name)
+}
+
+func (mf *MailFetcher) uidsValid() bool {
+	mailbox, err := mf.client.Select("INBOX", nil).Wait()
+	if err != nil {
+		log.Errorf("Failed to select inbox for %v: %v", mf.name, err)
+		return false
+	}
+	if mf.uidValidity == mailbox.UIDValidity {
+		return true
+	}
+	if mf.uidValidity != 0 {
+		log.Infof("UIDs for %v have been invalidated, all mails need to be refetched", mf.name)
+	}
+	mf.uidValidity = mailbox.UIDValidity
+	return false
+}
+
+func (mf *MailFetcher) loadState() {
+	uidLast, uidValidity := mf.stateStorage.GetState(mf.name)
+	mf.uidLast, mf.uidValidity = uidLast, uidValidity
+}
+
+func (mf *MailFetcher) saveState() {
+	mf.stateStorage.SaveState(mf.name, mf.uidLast, mf.uidValidity)
 }
 
 func (mf *MailFetcher) Logout() {

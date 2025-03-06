@@ -56,3 +56,16 @@ UPDATE thread
 SET enabled = true, last_message = GREATEST(last_message, $3), last_mail = $2
 WHERE id = $1;
 
+-- name: AddFetcher :exec
+INSERT INTO fetcher (id)
+VALUES ($1);
+
+-- name: GetFetcherState :many
+SELECT * FROM fetcher
+WHERE id = $1 LIMIT 1;
+
+-- name: UpdateFetcherState :exec
+UPDATE fetcher
+SET uid_last = $2, uid_validity = $3
+WHERE id = $1;
+

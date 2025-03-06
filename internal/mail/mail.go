@@ -11,11 +11,13 @@ type MailHandler struct {
 	fetchers []*MailFetcher
 }
 
-func (mh *MailHandler) Setup(cfg *config.Config, wg *sync.WaitGroup) {
+func (mh *MailHandler) Setup(
+	cfg *config.Config, wg *sync.WaitGroup, stateStorage FetcherStateStorage,
+) {
 	defer wg.Done()
 	var waitGroup sync.WaitGroup
 	for name, c := range cfg.Mail {
-		fetcher := NewMailFetcher(name, c)
+		fetcher := NewMailFetcher(name, c, stateStorage)
 		waitGroup.Add(1)
 		go func() {
 			fetcher.Login()
