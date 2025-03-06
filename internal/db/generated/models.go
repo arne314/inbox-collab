@@ -9,6 +9,12 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+type Fetcher struct {
+	ID          string
+	UidLast     int32
+	UidValidity int32
+}
+
 type Mail struct {
 	ID                    int64
 	HeaderID              string

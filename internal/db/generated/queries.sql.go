@@ -12,6 +12,16 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const addFetcher = `-- name: AddFetcher :exec
+INSERT INTO fetcher (id)
+VALUES ($1)
+`
+
+func (q *Queries) AddFetcher(ctx context.Context, id string) error {
+	_, err := q.db.Exec(ctx, addFetcher, id)
+	return err
+}
+
 const addMail = `-- name: AddMail :exec
 INSERT INTO mail (header_id, header_in_reply_to, header_references, timestamp, name_from, addr_from, addr_to, subject, body)
 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
@@ -77,6 +87,31 @@ func (q *Queries) AutoUpdateMailReplyTo(ctx context.Context) (int64, error) {
 		return 0, err
 	}
 	return result.RowsAffected(), nil
+}
+
+const getFetcherState = `-- name: GetFetcherState :many
+SELECT id, uid_last, uid_validity FROM fetcher
+WHERE id = $1 LIMIT 1
+`
+
+func (q *Queries) GetFetcherState(ctx context.Context, id string) ([]*Fetcher, error) {
+	rows, err := q.db.Query(ctx, getFetcherState, id)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []*Fetcher
+	for rows.Next() {
+		var i Fetcher
+		if err := rows.Scan(&i.ID, &i.UidLast, &i.UidValidity); err != nil {
+			return nil, err
+		}
+		items = append(items, &i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const getMail = `-- name: GetMail :one
@@ -253,6 +288,23 @@ type UpdateExtractedMessagesParams struct {
 
 func (q *Queries) UpdateExtractedMessages(ctx context.Context, arg UpdateExtractedMessagesParams) error {
 	_, err := q.db.Exec(ctx, updateExtractedMessages, arg.ID, arg.Messages)
+	return err
+}
+
+const updateFetcherState = `-- name: UpdateFetcherState :exec
+UPDATE fetcher
+SET uid_last = $2, uid_validity = $3
+WHERE id = $1
+`
+
+type UpdateFetcherStateParams struct {
+	ID          string
+	UidLast     int32
+	UidValidity int32
+}
+
+func (q *Queries) UpdateFetcherState(ctx context.Context, arg UpdateFetcherStateParams) error {
+	_, err := q.db.Exec(ctx, updateFetcherState, arg.ID, arg.UidLast, arg.UidValidity)
 	return err
 }
 
