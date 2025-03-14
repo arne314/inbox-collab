@@ -41,7 +41,6 @@ func (ic *InboxCollab) Setup(
 	dbHandler *db.DbHandler,
 	mailHandler *mail.MailHandler,
 	matrixHandler *matrix.MatrixHandler,
-	verifyMatrixSession bool,
 ) {
 	ic.config = config
 	ic.dbHandler = dbHandler
@@ -54,7 +53,7 @@ func (ic *InboxCollab) Setup(
 		getState:  dbHandler.GetMailFetcherState,
 		saveState: dbHandler.UpdateMailFetcherState,
 	})
-	go matrixHandler.Setup(config, verifyMatrixSession, waitGroup)
+	go matrixHandler.Setup(config, waitGroup)
 	waitGroup.Wait()
 }
 

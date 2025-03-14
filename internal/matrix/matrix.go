@@ -72,7 +72,7 @@ func (mh MatrixHandler) ShowSAS(
 	}()
 }
 
-func (mh *MatrixHandler) Setup(cfg *config.Config, autoVerifySession bool, wg *sync.WaitGroup) {
+func (mh *MatrixHandler) Setup(cfg *config.Config, wg *sync.WaitGroup) {
 	defer wg.Done()
 	client, err := mautrix.NewClient(cfg.MatrixHomeServer, "", "")
 	mh.client = client
@@ -130,7 +130,7 @@ func (mh *MatrixHandler) Setup(cfg *config.Config, autoVerifySession bool, wg *s
 		log.Fatalf("Error setting up verification helper: %v", err)
 	}
 	mh.verificationHelper = verificationHelper
-	mh.autoVerifySession = autoVerifySession
+	mh.autoVerifySession = cfg.VerifyMatrixSession
 	log.Info("Logged into matrix")
 }
 

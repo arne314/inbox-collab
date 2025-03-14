@@ -3,6 +3,7 @@ package mail
 import (
 	"fmt"
 	"regexp"
+	"strings"
 	"time"
 
 	"github.com/emersion/go-imap/v2"
@@ -40,6 +41,7 @@ type FetcherStateStorage interface {
 type MailFetcher struct {
 	name          string
 	config        *config.MailConfig
+	globalConfig  *config.Config
 	client        *imapclient.Client
 	idleCommand   *imapclient.IdleCommand
 	isIdle        bool
@@ -53,11 +55,15 @@ type MailFetcher struct {
 }
 
 func NewMailFetcher(
-	name string, cfg *config.MailConfig, stateStorage FetcherStateStorage,
+	name string,
+	config *config.MailConfig,
+	globalConfig *config.Config,
+	stateStorage FetcherStateStorage,
 ) *MailFetcher {
 	mailfetcher := &MailFetcher{
 		name:          name,
-		config:        cfg,
+		config:        config,
+		globalConfig:  globalConfig,
 		stateStorage:  stateStorage,
 		nameFromRegex: regexp.MustCompile(`(?i)\"?\s*([^<>\" ][^<>\"]+[^<>\" ])\"?\s*<`),
 		addressRegex: regexp.MustCompile(
@@ -165,6 +171,9 @@ func (mf *MailFetcher) Login() {
 		log.Fatalf("Failed to login to mailbox %v: %v", mf.name, err)
 	}
 	mf.client = client
+	if mf.globalConfig.ListMailboxes {
+		mf.listMailboxes()
+	}
 	mf.uidsValid() // try to select inbox
 	mf.Idle()
 	mf.saveState()
@@ -185,6 +194,20 @@ func (mf *MailFetcher) uidsValid() bool {
 	}
 	mf.uidValidity = mailbox.UIDValidity
 	return false
+}
+
+func (mf *MailFetcher) listMailboxes() {
+	listCmd := mf.client.List("", "*", nil)
+	mailboxes, err := listCmd.Collect()
+	mbs := make([]string, len(mailboxes))
+	if err != nil {
+		log.Errorf("Error listing mailboxes for %v: %v", mf.name, err)
+		return
+	}
+	for i, m := range mailboxes {
+		mbs[i] = m.Mailbox
+	}
+	log.Infof("Available mailboxes for %v: %v", mf.name, strings.Join(mbs, ", "))
 }
 
 func (mf *MailFetcher) loadState() {

@@ -9,15 +9,17 @@ import (
 
 type MailHandler struct {
 	fetchers []*MailFetcher
+	config   *config.Config
 }
 
 func (mh *MailHandler) Setup(
 	cfg *config.Config, wg *sync.WaitGroup, stateStorage FetcherStateStorage,
 ) {
 	defer wg.Done()
+	mh.config = cfg
 	var waitGroup sync.WaitGroup
 	for name, c := range cfg.Mail {
-		fetcher := NewMailFetcher(name, c, stateStorage)
+		fetcher := NewMailFetcher(name, c, cfg, stateStorage)
 		waitGroup.Add(1)
 		go func() {
 			fetcher.Login()
@@ -33,6 +35,10 @@ func (mh *MailHandler) Run() {
 }
 
 func (mh *MailHandler) FetchMessages(mails chan []*Mail) {
+	if mh.config.ListMailboxes {
+		close(mails)
+		return
+	}
 	var wg sync.WaitGroup
 	wg.Add(len(mh.fetchers))
 	for _, fetcher := range mh.fetchers {

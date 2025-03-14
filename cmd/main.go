@@ -1,7 +1,6 @@
 package main
 
 import (
-	"flag"
 	"os"
 	"os/signal"
 	"sync"
@@ -26,14 +25,9 @@ var (
 
 func main() {
 	log.Info("Starting inbox-collab...")
-	verifyMatrixSession := flag.Bool(
-		"verify-matrix", false,
-		"Accept session verification requests and automatically confirm matching SAS",
-	)
-	flag.Parse()
 	config.Load()
 	dbHandler.Setup(config)
-	inboxCollab.Setup(config, dbHandler, mailHandler, matrixHandler, *verifyMatrixSession)
+	inboxCollab.Setup(config, dbHandler, mailHandler, matrixHandler)
 
 	go mailHandler.Run()
 	go matrixHandler.Run()

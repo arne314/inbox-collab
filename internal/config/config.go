@@ -1,6 +1,7 @@
 package config
 
 import (
+	"flag"
 	"fmt"
 	"os"
 	"strings"
@@ -22,12 +23,15 @@ type LLMConfig struct {
 }
 
 type Config struct {
-	Mail             map[string]*MailConfig `toml:"mail"`
-	MatrixHomeServer string
-	MatrixUsername   string
-	MatrixPassword   string
-	DatabaseUrl      string
-	LLM              *LLMConfig `toml:"llm"`
+	Mail map[string]*MailConfig `toml:"mail"`
+	LLM  *LLMConfig             `toml:"llm"`
+
+	MatrixHomeServer    string
+	MatrixUsername      string
+	MatrixPassword      string
+	DatabaseUrl         string
+	VerifyMatrixSession bool
+	ListMailboxes       bool
 }
 
 func (c *Config) getenv(name string) string {
@@ -45,7 +49,20 @@ func (c *Config) Load() {
 		log.Fatalf("Error decoding TOML: %s", err)
 		return
 	}
-	log.Infof("Loaded toml config %+v", c)
+
+	// parse command line flags
+	flagVerifyMatrix := flag.Bool(
+		"verify-matrix", false,
+		"Accept session verification requests and automatically confirm matching SAS",
+	)
+	flagListMailboxes := flag.Bool(
+		"list-mailboxes", false,
+		"List all mailboxes on the mail server that the authenticated user has access to",
+	)
+	flag.Parse()
+	c.VerifyMatrixSession = *flagVerifyMatrix
+	c.ListMailboxes = *flagListMailboxes
+	log.Infof("Loaded config: %+v", c)
 
 	// load .env
 	err = godotenv.Load()
