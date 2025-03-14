@@ -4,8 +4,8 @@ import (
 	"context"
 	"sync"
 
-	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/jackc/pgx/v5/pgxpool"
 
 	config "github.com/arne314/inbox-collab/internal/config"
 	db "github.com/arne314/inbox-collab/internal/db/generated"
@@ -13,19 +13,19 @@ import (
 )
 
 type DbHandler struct {
-	connection *pgx.Conn
-	queries    *db.Queries
+	pool    *pgxpool.Pool
+	queries *db.Queries
 }
 
 func (dh *DbHandler) Setup(cfg *config.Config) {
 	ctx := context.Background()
-	conn, err := pgx.Connect(ctx, cfg.DatabaseUrl)
+	pool, err := pgxpool.New(ctx, cfg.DatabaseUrl)
 	if err != nil {
 		log.Fatalf("Failed to connect to database: %v", err)
 		return
 	}
-	dh.connection = conn
-	dh.queries = db.New(conn)
+	dh.pool = pool
+	dh.queries = db.New(pool)
 	mailCount, err := dh.queries.MailCount(ctx)
 	if err != nil {
 		log.Errorf("Error counting mails: %v", err)
@@ -33,7 +33,7 @@ func (dh *DbHandler) Setup(cfg *config.Config) {
 	}
 	log.Infof(
 		"Connected to database on %v with %v mails",
-		dh.connection.Config().Host,
+		dh.pool.Config().ConnConfig.Host,
 		mailCount,
 	)
 }
@@ -195,8 +195,5 @@ func (dh *DbHandler) UpdateMailFetcherState(id string, uidLast uint32, uidValidi
 
 func (dh *DbHandler) Stop(waitGroup *sync.WaitGroup) {
 	defer waitGroup.Done()
-	err := dh.connection.Close(context.Background())
-	if err != nil {
-		log.Errorf("Failed to close database connection: %v", err)
-	}
+	dh.pool.Close()
 }
