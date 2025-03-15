@@ -12,10 +12,11 @@ import (
 )
 
 type MailConfig struct {
-	Hostname string `toml:"hostname"`
-	Port     int    `toml:"port"`
-	Username string
-	Password string
+	Hostname  string   `toml:"hostname"`
+	Port      int      `toml:"port"`
+	Mailboxes []string `toml:"mailboxes"`
+	Username  string
+	Password  string
 }
 
 type LLMConfig struct {
@@ -79,6 +80,9 @@ func (c *Config) Load() {
 		mailConfig.Password = c.getenv(fmt.Sprintf("MAIL_%s_PASSWORD", strings.ToUpper(name)))
 		if mailConfig.Username == "" || mailConfig.Password == "" {
 			log.Fatalf("Incomplete mail credentials provided for %v", name)
+		}
+		if len(mailConfig.Mailboxes) == 0 {
+			mailConfig.Mailboxes = []string{"INBOX"}
 		}
 	}
 }

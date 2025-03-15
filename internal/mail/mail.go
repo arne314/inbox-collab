@@ -1,6 +1,7 @@
 package mail
 
 import (
+	"fmt"
 	"sync"
 
 	config "github.com/arne314/inbox-collab/internal/config"
@@ -13,19 +14,30 @@ type MailHandler struct {
 }
 
 func (mh *MailHandler) Setup(
-	cfg *config.Config, wg *sync.WaitGroup, stateStorage FetcherStateStorage,
+	globalCfg *config.Config, wg *sync.WaitGroup, stateStorage FetcherStateStorage,
 ) {
 	defer wg.Done()
-	mh.config = cfg
+	mh.config = globalCfg
 	var waitGroup sync.WaitGroup
-	for name, c := range cfg.Mail {
-		fetcher := NewMailFetcher(name, c, cfg, stateStorage)
-		waitGroup.Add(1)
-		go func() {
-			fetcher.Login()
-			waitGroup.Done()
-		}()
-		mh.fetchers = append(mh.fetchers, fetcher)
+	for name, cfg := range globalCfg.Mail {
+		for _, mailbox := range cfg.Mailboxes {
+			var fetcherName string
+			if globalCfg.ListMailboxes {
+				fetcherName = name
+			} else {
+				fetcherName = fmt.Sprintf("%s_%s", name, mailbox)
+			}
+			fetcher := NewMailFetcher(fetcherName, mailbox, cfg, globalCfg, stateStorage)
+			waitGroup.Add(1)
+			go func() {
+				fetcher.Login()
+				waitGroup.Done()
+			}()
+			mh.fetchers = append(mh.fetchers, fetcher)
+			if globalCfg.ListMailboxes { // only one fetcher per mail server
+				break
+			}
+		}
 	}
 	waitGroup.Wait()
 	log.Infof("Setup MailHandler")

@@ -40,6 +40,7 @@ type FetcherStateStorage interface {
 
 type MailFetcher struct {
 	name          string
+	mailbox       string
 	config        *config.MailConfig
 	globalConfig  *config.Config
 	client        *imapclient.Client
@@ -56,12 +57,14 @@ type MailFetcher struct {
 
 func NewMailFetcher(
 	name string,
+	mailbox string,
 	config *config.MailConfig,
 	globalConfig *config.Config,
 	stateStorage FetcherStateStorage,
 ) *MailFetcher {
 	mailfetcher := &MailFetcher{
 		name:          name,
+		mailbox:       mailbox,
 		config:        config,
 		globalConfig:  globalConfig,
 		stateStorage:  stateStorage,
@@ -80,7 +83,7 @@ func (mf *MailFetcher) FetchMessages() []*Mail {
 	defer mf.Idle()
 
 	var searchCriteria *imap.SearchCriteria
-	if mf.uidsValid() {
+	if ok, _ := mf.uidsValid(); ok {
 		uid := imap.UIDSet{}
 		uid.AddRange(imap.UID(mf.uidLast+1), 0) // 0 means no upper limit
 		searchCriteria = &imap.SearchCriteria{
@@ -173,27 +176,31 @@ func (mf *MailFetcher) Login() {
 	mf.client = client
 	if mf.globalConfig.ListMailboxes {
 		mf.listMailboxes()
+		return
 	}
-	mf.uidsValid() // try to select inbox
+	_, err = mf.uidsValid() // try to select inbox
+	if err != nil {
+		return
+	}
 	mf.Idle()
 	mf.saveState()
 	log.Infof("MailFetcher %v setup successfully", mf.name)
 }
 
-func (mf *MailFetcher) uidsValid() bool {
-	mailbox, err := mf.client.Select("INBOX", nil).Wait()
+func (mf *MailFetcher) uidsValid() (bool, error) {
+	mailbox, err := mf.client.Select(mf.mailbox, nil).Wait()
 	if err != nil {
 		log.Errorf("Failed to select inbox for %v: %v", mf.name, err)
-		return false
+		return false, err
 	}
 	if mf.uidValidity == mailbox.UIDValidity {
-		return true
+		return true, nil
 	}
 	if mf.uidValidity != 0 {
 		log.Infof("UIDs for %v have been invalidated, all mails need to be refetched", mf.name)
 	}
 	mf.uidValidity = mailbox.UIDValidity
-	return false
+	return false, nil
 }
 
 func (mf *MailFetcher) listMailboxes() {
