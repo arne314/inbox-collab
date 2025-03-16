@@ -2,6 +2,7 @@ package mail
 
 import (
 	"regexp"
+	"slices"
 	"strings"
 	"time"
 
@@ -27,7 +28,8 @@ func (mf *MailFetcher) parseHeaderRegex(
 			matches[i] = strings.ToLower(matches[i])
 		}
 	}
-	return matches
+	slices.Sort(matches)
+	return slices.Compact(matches)
 }
 
 func (mf *MailFetcher) parseAddresses(header string, allowEmpty bool) []string {
