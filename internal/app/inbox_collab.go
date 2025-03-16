@@ -28,7 +28,7 @@ type InboxCollab struct {
 	doneExtracting     chan struct{}
 	extractionRequired atomic.Bool
 	extractionDone     atomic.Bool
-	sortingRequired    atomic.Bool
+	sortingRequired    chan struct{}
 	fetchedMails       chan []*mail.Mail
 }
 
@@ -59,12 +59,11 @@ func (ic *InboxCollab) Setup(
 
 	ic.fetchedMails = make(chan []*mail.Mail, 100)
 	ic.doneStoring = make(chan struct{}, 1)
+	ic.sortingRequired = make(chan struct{}, 1)
 	ic.extractionRequired = atomic.Bool{}
 	ic.extractionRequired.Store(true)
 	ic.extractionDone = atomic.Bool{}
 	ic.extractionDone.Store(true)
-	ic.sortingRequired = atomic.Bool{}
-	ic.sortingRequired.Store(true)
 
 	waitGroup.Add(2)
 	go mailHandler.Setup(config, waitGroup, ic.fetchedMails, FetcherStateStorageImpl{
@@ -91,9 +90,10 @@ func (ic *InboxCollab) storeMails() {
 				Body:             &pgtype.Text{String: mail.Text, Valid: true},
 			})
 		}
-		ic.dbHandler.AddMails(modelled)
-		ic.doneStoring <- struct{}{}
-		ic.extractionRequired.Store(true)
+		if ic.dbHandler.AddMails(modelled) > 0 {
+			ic.doneStoring <- struct{}{}
+			ic.extractionRequired.Store(true)
+		}
 	}
 	log.Info("Added fetched messages to db")
 }
@@ -128,25 +128,35 @@ func (ic *InboxCollab) extractMessages() {
 			}()
 		}
 		ic.extractionDone.Store(true)
-		ic.sortingRequired.Store(true)
+		ic.sortingRequired <- struct{}{}
 		wg.Wait()
 		log.Infof("Done extracting messages from %v mails", len(mails))
 	}
 }
 
 func (ic *InboxCollab) sortMails() {
-	var lastSort time.Time
+	var sortRequestTime time.Time
+	var sortingRequested atomic.Bool
+	go func() {
+		for range ic.sortingRequired {
+			if !sortingRequested.Swap(true) {
+				sortRequestTime = time.Now()
+			}
+		}
+	}()
+	ic.sortingRequired <- struct{}{} // inital sort
+
 	for true {
 		timeSinceMailboxUpdate := time.Now().Sub(ic.mailHandler.GetLastMailboxUpdate()).Seconds()
-		timeSinceLastSort := time.Now().Sub(lastSort).Seconds()
-		waitForCompleteData := timeSinceMailboxUpdate < 10 && timeSinceLastSort < 120 // timeout
-		if !ic.extractionDone.Load() || !ic.sortingRequired.Load() || waitForCompleteData {
+		timeSinceSortRequest := time.Now().Sub(sortRequestTime).Seconds()
+		waitForCompleteData := timeSinceMailboxUpdate < 10 && timeSinceSortRequest < 120 // timeout
+		if !ic.extractionDone.Load() || !sortingRequested.Load() || waitForCompleteData {
 			time.Sleep(1 * time.Second)
 			continue
 		}
-		ic.sortingRequired.Store(false)
+		sortingRequested.Store(false)
+
 		ic.dbHandler.AutoUpdateMailReplyTo()
-		lastSort = time.Now()
 		mails := ic.dbHandler.GetMailsRequiringSorting()
 		if len(mails) == 0 {
 			continue

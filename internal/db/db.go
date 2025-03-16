@@ -38,9 +38,10 @@ func (dh *DbHandler) Setup(cfg *config.Config) {
 	)
 }
 
-func (dh *DbHandler) AddMails(mails []*db.Mail) {
+func (dh *DbHandler) AddMails(mails []*db.Mail) int {
+	count := 0
 	for _, mail := range mails {
-		err := dh.queries.AddMail(context.Background(), db.AddMailParams{
+		inserted, err := dh.queries.AddMail(context.Background(), db.AddMailParams{
 			HeaderID:         mail.HeaderID,
 			HeaderInReplyTo:  mail.HeaderInReplyTo,
 			HeaderReferences: mail.HeaderReferences,
@@ -51,11 +52,15 @@ func (dh *DbHandler) AddMails(mails []*db.Mail) {
 			Subject:          mail.Subject,
 			Body:             mail.Body,
 		})
+		if len(inserted) != 0 {
+			count++
+		}
 		if err != nil {
 			log.Errorf("Error adding mail to db: %v", err)
-			return
+			break
 		}
 	}
+	return count
 }
 
 func (dh *DbHandler) GetMailById(id int64) *db.Mail {
