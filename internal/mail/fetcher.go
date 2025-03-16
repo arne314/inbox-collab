@@ -50,9 +50,12 @@ type MailFetcher struct {
 	addressRegex  *regexp.Regexp
 	idRegex       *regexp.Regexp
 
-	uidLast      uint32
-	uidValidity  uint32
-	stateStorage FetcherStateStorage
+	uidLast     uint32
+	uidValidity uint32
+	mailHandler *MailHandler
+
+	fetchingRequired chan struct{}
+	fetchedMails     chan []*Mail
 }
 
 func NewMailFetcher(
@@ -60,19 +63,22 @@ func NewMailFetcher(
 	mailbox string,
 	config *config.MailConfig,
 	globalConfig *config.Config,
-	stateStorage FetcherStateStorage,
+	mailHandler *MailHandler,
+	fetchedMails chan []*Mail,
 ) *MailFetcher {
 	mailfetcher := &MailFetcher{
 		name:          name,
 		mailbox:       mailbox,
 		config:        config,
 		globalConfig:  globalConfig,
-		stateStorage:  stateStorage,
+		mailHandler:   mailHandler,
 		nameFromRegex: regexp.MustCompile(`(?i)\"?\s*([^<>\" ][^<>\"]+[^<>\" ])\"?\s*<`),
 		addressRegex: regexp.MustCompile(
 			`(?i)<?([a-zA-Z0-9%+-][a-zA-Z0-9.+-_{}\(\)\[\]'"\\#\$%\^\?/=&!\*\|~]*@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})>?`,
 		),
-		idRegex: regexp.MustCompile(`(?i)<([^@ ]+@[^@ ]+)>`),
+		idRegex:          regexp.MustCompile(`(?i)<([^@ ]+@[^@ ]+)>`),
+		fetchingRequired: make(chan struct{}, 1),
+		fetchedMails:     fetchedMails,
 	}
 	mailfetcher.loadState()
 	return mailfetcher
@@ -155,13 +161,30 @@ func (mf *MailFetcher) Idle() {
 
 func (mf *MailFetcher) RevokeIdle() {
 	if mf.isIdle {
-		mf.idleCommand.Close()
+		if err := mf.idleCommand.Close(); err != nil {
+			log.Errorf("Error stopping idle of MailFetcher %v, retrying in 5s...", mf.name)
+			time.Sleep(5 * time.Second)
+			mf.RevokeIdle()
+		}
 	}
 	mf.isIdle = false
+	log.Infof("MailFetcher %v stopped idle", mf.name)
 }
 
 func (mf *MailFetcher) Login() {
-	options := &imapclient.Options{}
+	options := &imapclient.Options{
+		UnilateralDataHandler: &imapclient.UnilateralDataHandler{
+			Mailbox: func(data *imapclient.UnilateralDataMailbox) {
+				if data.NumMessages != nil {
+					log.Infof(
+						"MailFetcher %v received a mailbox update, now %v messages",
+						mf.name, *data.NumMessages,
+					)
+					mf.queueFetch()
+				}
+			},
+		},
+	}
 	client, err := imapclient.DialTLS(
 		fmt.Sprintf("%s:%d", mf.config.Hostname, mf.config.Port),
 		options,
@@ -218,12 +241,26 @@ func (mf *MailFetcher) listMailboxes() {
 }
 
 func (mf *MailFetcher) loadState() {
-	uidLast, uidValidity := mf.stateStorage.GetState(mf.name)
+	uidLast, uidValidity := mf.mailHandler.StateStorage.GetState(mf.name)
 	mf.uidLast, mf.uidValidity = uidLast, uidValidity
 }
 
 func (mf *MailFetcher) saveState() {
-	mf.stateStorage.SaveState(mf.name, mf.uidLast, mf.uidValidity)
+	mf.mailHandler.StateStorage.SaveState(mf.name, mf.uidLast, mf.uidValidity)
+}
+
+func (mf *MailFetcher) queueFetch() {
+	if len(mf.fetchingRequired) == 0 {
+		mf.fetchingRequired <- struct{}{}
+	}
+	mf.mailHandler.MailboxUpdated()
+}
+
+func (mf *MailFetcher) StartFetching() {
+	mf.queueFetch() // initial fetch
+	for range mf.fetchingRequired {
+		mf.fetchedMails <- mf.FetchMessages()
+	}
 }
 
 func (mf *MailFetcher) Logout() {

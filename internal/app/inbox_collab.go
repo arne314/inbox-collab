@@ -2,6 +2,8 @@ package app
 
 import (
 	"sync"
+	"sync/atomic"
+	"time"
 
 	"github.com/jackc/pgx/v5/pgtype"
 	log "github.com/sirupsen/logrus"
@@ -21,6 +23,13 @@ type InboxCollab struct {
 	matrixHandler *matrix.MatrixHandler
 	mailHandler   *mail.MailHandler
 	llm           *LLM
+
+	doneStoring        chan struct{}
+	doneExtracting     chan struct{}
+	extractionRequired atomic.Bool
+	extractionDone     atomic.Bool
+	sortingRequired    atomic.Bool
+	fetchedMails       chan []*mail.Mail
 }
 
 type FetcherStateStorageImpl struct {
@@ -48,8 +57,17 @@ func (ic *InboxCollab) Setup(
 	ic.matrixHandler = matrixHandler
 	ic.llm = &LLM{config: config.LLM}
 
+	ic.fetchedMails = make(chan []*mail.Mail, 100)
+	ic.doneStoring = make(chan struct{}, 1)
+	ic.extractionRequired = atomic.Bool{}
+	ic.extractionRequired.Store(true)
+	ic.extractionDone = atomic.Bool{}
+	ic.extractionDone.Store(true)
+	ic.sortingRequired = atomic.Bool{}
+	ic.sortingRequired.Store(true)
+
 	waitGroup.Add(2)
-	go mailHandler.Setup(config, waitGroup, FetcherStateStorageImpl{
+	go mailHandler.Setup(config, waitGroup, ic.fetchedMails, FetcherStateStorageImpl{
 		getState:  dbHandler.GetMailFetcherState,
 		saveState: dbHandler.UpdateMailFetcherState,
 	})
@@ -57,12 +75,10 @@ func (ic *InboxCollab) Setup(
 	waitGroup.Wait()
 }
 
-func (ic *InboxCollab) fetchMessages() {
-	inboxes := make(chan []*mail.Mail, 10)
-	ic.mailHandler.FetchMessages(inboxes)
-	for mails := range inboxes {
+func (ic *InboxCollab) storeMails() {
+	for chunk := range ic.fetchedMails {
 		var modelled []*model.Mail
-		for _, mail := range mails {
+		for _, mail := range chunk {
 			modelled = append(modelled, &model.Mail{
 				HeaderID:         mail.MessageId,
 				HeaderInReplyTo:  pgtype.Text{String: mail.InReplyTo, Valid: true},
@@ -76,11 +92,13 @@ func (ic *InboxCollab) fetchMessages() {
 			})
 		}
 		ic.dbHandler.AddMails(modelled)
+		ic.doneStoring <- struct{}{}
+		ic.extractionRequired.Store(true)
 	}
 	log.Info("Added fetched messages to db")
 }
 
-func (ic *InboxCollab) extractMessages(mail *model.Mail) {
+func (ic *InboxCollab) performMessageExtraction(mail *model.Mail) {
 	ic.llm.ExtractMessages(mail)
 	if mail.Messages == nil || mail.Messages.Messages == nil {
 		log.Errorf("Error extracting messages for mail %v", mail.ID)
@@ -89,52 +107,73 @@ func (ic *InboxCollab) extractMessages(mail *model.Mail) {
 	}
 }
 
-func (ic *InboxCollab) extractFetchedMessages() {
+func (ic *InboxCollab) extractMessages() {
 	var wg sync.WaitGroup
-	mails := ic.dbHandler.GetMailsRequiringMessageExtraction()
-	if len(mails) == 0 {
-		return
-	}
-	log.Infof("Extracting messages from %v mails...", len(mails))
-	wg.Add(len(mails))
-	for _, mail := range mails {
-		go func() {
-			ic.extractMessages(mail)
-			wg.Done()
-		}()
-	}
-	wg.Wait()
-	log.Infof("Done extracting messages from %v mails", len(mails))
-}
-
-func (ic *InboxCollab) processExtractedMessages() {
-	ic.dbHandler.AutoUpdateMailReplyTo()
-	mails := ic.dbHandler.GetMailsRequiringSorting()
-	if len(mails) == 0 {
-		return
-	}
-	log.Infof("Sorting %v mails...", len(mails))
-	for _, mail := range mails {
-		var threadParent *model.Mail
-		if mail.ReplyTo.Valid {
-			threadParent = ic.dbHandler.GetMailById(mail.ReplyTo.Int64)
+	for range ic.doneStoring {
+		if !ic.extractionRequired.Load() {
+			continue // drains the channel
 		}
-		if threadParent == nil {
-			threadParent = ic.dbHandler.GetReferencedThreadParent(mail)
-		}
-		if threadParent != nil && threadParent.Thread.Valid {
-			ic.dbHandler.AddMailToThread(mail, threadParent.Thread.Int64)
+		ic.extractionRequired.Store(false)
+		ic.extractionDone.Store(false)
+		mails := ic.dbHandler.GetMailsRequiringMessageExtraction()
+		if len(mails) == 0 {
 			continue
 		}
-		ic.dbHandler.CreateThread(mail)
+		log.Infof("Extracting messages from %v mails...", len(mails))
+		wg.Add(len(mails))
+		for _, mail := range mails {
+			go func() {
+				defer wg.Done()
+				ic.performMessageExtraction(mail)
+			}()
+		}
+		ic.extractionDone.Store(true)
+		ic.sortingRequired.Store(true)
+		wg.Wait()
+		log.Infof("Done extracting messages from %v mails", len(mails))
 	}
-	log.Infof("Done sorting %v mails", len(mails))
+}
+
+func (ic *InboxCollab) sortMails() {
+	var lastSort time.Time
+	for true {
+		timeSinceMailboxUpdate := time.Now().Sub(ic.mailHandler.GetLastMailboxUpdate()).Seconds()
+		timeSinceLastSort := time.Now().Sub(lastSort).Seconds()
+		waitForCompleteData := timeSinceMailboxUpdate < 10 && timeSinceLastSort < 120 // timeout
+		if !ic.extractionDone.Load() || !ic.sortingRequired.Load() || waitForCompleteData {
+			time.Sleep(1 * time.Second)
+			continue
+		}
+		ic.sortingRequired.Store(false)
+		ic.dbHandler.AutoUpdateMailReplyTo()
+		lastSort = time.Now()
+		mails := ic.dbHandler.GetMailsRequiringSorting()
+		if len(mails) == 0 {
+			continue
+		}
+		log.Infof("Sorting %v mails...", len(mails))
+		for _, mail := range mails {
+			var threadParent *model.Mail
+			if mail.ReplyTo.Valid {
+				threadParent = ic.dbHandler.GetMailById(mail.ReplyTo.Int64)
+			}
+			if threadParent == nil {
+				threadParent = ic.dbHandler.GetReferencedThreadParent(mail)
+			}
+			if threadParent != nil && threadParent.Thread.Valid {
+				ic.dbHandler.AddMailToThread(mail, threadParent.Thread.Int64)
+				continue
+			}
+			ic.dbHandler.CreateThread(mail)
+		}
+		log.Infof("Done sorting %v mails", len(mails))
+	}
 }
 
 func (ic *InboxCollab) Run() {
-	ic.fetchMessages()
-	ic.extractFetchedMessages()
-	ic.processExtractedMessages()
+	go ic.storeMails()
+	go ic.extractMessages()
+	go ic.sortMails()
 }
 
 func (ic *InboxCollab) Stop(waitGroup *sync.WaitGroup) {

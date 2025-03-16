@@ -3,22 +3,32 @@ package mail
 import (
 	"fmt"
 	"sync"
+	"time"
 
 	config "github.com/arne314/inbox-collab/internal/config"
 	log "github.com/sirupsen/logrus"
 )
 
+var mailboxUpdateMutex sync.RWMutex
+
 type MailHandler struct {
-	fetchers []*MailFetcher
-	config   *config.Config
+	fetchers          []*MailFetcher
+	config            *config.Config
+	fetchedMails      chan []*Mail
+	lastMailboxUpdate time.Time
+	StateStorage      FetcherStateStorage
 }
 
 func (mh *MailHandler) Setup(
-	globalCfg *config.Config, wg *sync.WaitGroup, stateStorage FetcherStateStorage,
+	globalCfg *config.Config, wg *sync.WaitGroup,
+	fetchedMails chan []*Mail, stateStorage FetcherStateStorage,
 ) {
 	defer wg.Done()
-	mh.config = globalCfg
 	var waitGroup sync.WaitGroup
+	mh.config = globalCfg
+	mh.fetchedMails = fetchedMails
+	mh.StateStorage = stateStorage
+
 	for name, cfg := range globalCfg.Mail {
 		for _, mailbox := range cfg.Mailboxes {
 			var fetcherName string
@@ -27,7 +37,10 @@ func (mh *MailHandler) Setup(
 			} else {
 				fetcherName = fmt.Sprintf("%s_%s", name, mailbox)
 			}
-			fetcher := NewMailFetcher(fetcherName, mailbox, cfg, globalCfg, stateStorage)
+			fetcher := NewMailFetcher(
+				fetcherName, mailbox, cfg,
+				globalCfg, mh, fetchedMails,
+			)
 			waitGroup.Add(1)
 			go func() {
 				fetcher.Login()
@@ -43,24 +56,23 @@ func (mh *MailHandler) Setup(
 	log.Infof("Setup MailHandler")
 }
 
-func (mh *MailHandler) Run() {
+func (mh *MailHandler) MailboxUpdated() {
+	mailboxUpdateMutex.Lock()
+	defer mailboxUpdateMutex.Unlock()
+	mh.lastMailboxUpdate = time.Now()
 }
 
-func (mh *MailHandler) FetchMessages(mails chan []*Mail) {
+func (mh *MailHandler) GetLastMailboxUpdate() time.Time {
+	return mh.lastMailboxUpdate
+}
+
+func (mh *MailHandler) Run() {
 	if mh.config.ListMailboxes {
-		close(mails)
 		return
 	}
-	var wg sync.WaitGroup
-	wg.Add(len(mh.fetchers))
 	for _, fetcher := range mh.fetchers {
-		go func() {
-			mails <- fetcher.FetchMessages()
-			wg.Done()
-		}()
+		go fetcher.StartFetching()
 	}
-	wg.Wait()
-	close(mails)
 }
 
 func (mh *MailHandler) Stop(wg *sync.WaitGroup) {
