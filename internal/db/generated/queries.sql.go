@@ -22,10 +22,11 @@ func (q *Queries) AddFetcher(ctx context.Context, id string) error {
 	return err
 }
 
-const addMail = `-- name: AddMail :exec
+const addMail = `-- name: AddMail :many
 INSERT INTO mail (header_id, header_in_reply_to, header_references, timestamp, name_from, addr_from, addr_to, subject, body)
 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
 ON CONFLICT (header_id) DO NOTHING
+RETURNING id, header_id, header_in_reply_to, header_references, timestamp, name_from, addr_from, addr_to, subject, body, messages, last_message_extraction, reply_to, thread
 `
 
 type AddMailParams struct {
@@ -40,8 +41,8 @@ type AddMailParams struct {
 	Body             *pgtype.Text
 }
 
-func (q *Queries) AddMail(ctx context.Context, arg AddMailParams) error {
-	_, err := q.db.Exec(ctx, addMail,
+func (q *Queries) AddMail(ctx context.Context, arg AddMailParams) ([]*Mail, error) {
+	rows, err := q.db.Query(ctx, addMail,
 		arg.HeaderID,
 		arg.HeaderInReplyTo,
 		arg.HeaderReferences,
@@ -52,7 +53,37 @@ func (q *Queries) AddMail(ctx context.Context, arg AddMailParams) error {
 		arg.Subject,
 		arg.Body,
 	)
-	return err
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []*Mail
+	for rows.Next() {
+		var i Mail
+		if err := rows.Scan(
+			&i.ID,
+			&i.HeaderID,
+			&i.HeaderInReplyTo,
+			&i.HeaderReferences,
+			&i.Timestamp,
+			&i.NameFrom,
+			&i.AddrFrom,
+			&i.AddrTo,
+			&i.Subject,
+			&i.Body,
+			&i.Messages,
+			&i.LastMessageExtraction,
+			&i.ReplyTo,
+			&i.Thread,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, &i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const addThread = `-- name: AddThread :one
@@ -183,7 +214,7 @@ func (q *Queries) GetMailsRequiringMessageExtraction(ctx context.Context) ([]*Ma
 
 const getMailsRequiringSorting = `-- name: GetMailsRequiringSorting :many
 SELECT id, header_id, header_in_reply_to, header_references, timestamp, name_from, addr_from, addr_to, subject, body, messages, last_message_extraction, reply_to, thread FROM mail
-WHERE thread IS NULL
+WHERE thread IS NULL AND messages ->> 'messages' IS NOT NULL
 ORDER BY timestamp
 `
 
