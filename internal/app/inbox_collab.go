@@ -75,6 +75,7 @@ func (ic *InboxCollab) Setup(
 }
 
 func (ic *InboxCollab) storeMails() {
+	initial := true
 	for chunk := range ic.fetchedMails {
 		var modelled []*model.Mail
 		for _, mail := range chunk {
@@ -90,9 +91,10 @@ func (ic *InboxCollab) storeMails() {
 				Body:             &pgtype.Text{String: mail.Text, Valid: true},
 			})
 		}
-		if ic.dbHandler.AddMails(modelled) > 0 {
-			ic.doneStoring <- struct{}{}
+		if ic.dbHandler.AddMails(modelled) > 0 || initial {
 			ic.extractionRequired.Store(true)
+			ic.doneStoring <- struct{}{}
+			initial = false
 		}
 	}
 	log.Info("Added fetched messages to db")
@@ -109,6 +111,7 @@ func (ic *InboxCollab) performMessageExtraction(mail *model.Mail) {
 
 func (ic *InboxCollab) extractMessages() {
 	var wg sync.WaitGroup
+	initial := true
 	for range ic.doneStoring {
 		if !ic.extractionRequired.Load() {
 			continue // drains the channel
@@ -116,9 +119,10 @@ func (ic *InboxCollab) extractMessages() {
 		ic.extractionRequired.Store(false)
 		ic.extractionDone.Store(false)
 		mails := ic.dbHandler.GetMailsRequiringMessageExtraction()
-		if len(mails) == 0 {
+		if len(mails) == 0 && !initial {
 			continue
 		}
+		initial = false
 		log.Infof("Extracting messages from %v mails...", len(mails))
 		wg.Add(len(mails))
 		for _, mail := range mails {
@@ -144,7 +148,6 @@ func (ic *InboxCollab) sortMails() {
 			}
 		}
 	}()
-	ic.sortingRequired <- struct{}{} // inital sort
 
 	for true {
 		timeSinceMailboxUpdate := time.Now().Sub(ic.mailHandler.GetLastMailboxUpdate()).Seconds()
