@@ -30,12 +30,14 @@ type Mail struct {
 	LastMessageExtraction pgtype.Timestamp
 	ReplyTo               pgtype.Int8
 	Thread                pgtype.Int8
+	MatrixID              pgtype.Text
 }
 
 type Thread struct {
 	ID          int64
 	Enabled     pgtype.Bool
 	LastMessage pgtype.Timestamp
+	MatrixID    pgtype.Text
 	FirstMail   pgtype.Int8
 	LastMail    pgtype.Int8
 }
