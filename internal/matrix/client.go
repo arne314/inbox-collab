@@ -2,6 +2,7 @@ package matrix
 
 import (
 	"context"
+	"strings"
 	"time"
 
 	config "github.com/arne314/inbox-collab/internal/config"
@@ -133,10 +134,17 @@ func (mc *MatrixClient) Login(cfg *config.Config) {
 	log.Info("Logged into matrix")
 }
 
+func (mc *MatrixClient) SleepOnRateLimit(err error) {
+	if strings.Contains(err.Error(), "M_LIMIT_EXCEEDED") {
+		time.Sleep(time.Second * 5)
+	}
+}
+
 func (mc *MatrixClient) SendRoomMessage(roomId string, text string) (bool, string) {
 	resp, err := mc.client.SendText(context.Background(), id.RoomID(roomId), text)
 	if err != nil {
 		log.Errorf("Error sending message to matrix: %v", err)
+		mc.SleepOnRateLimit(err)
 		return false, ""
 	}
 	return true, resp.EventID.String()
@@ -160,6 +168,7 @@ func (mc *MatrixClient) SendThreadMessage(
 	)
 	if err != nil {
 		log.Errorf("Error responding to thread on matrix: %v", err)
+		mc.SleepOnRateLimit(err)
 		return false, ""
 	}
 	return true, resp.EventID.String()
