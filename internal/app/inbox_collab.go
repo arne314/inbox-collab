@@ -189,14 +189,14 @@ func (ic *InboxCollab) sortMails() {
 func (ic *InboxCollab) notifyMatrix() {
 	ic.matrixRequired <- struct{}{} // initial update
 	for range ic.matrixRequired {
-		retryAny := false
 		threads := ic.dbHandler.GetMatrixReadyThreads()
 		for _, thread := range threads {
 			ok, matrixId := ic.matrixHandler.CreateThread(ic.config.Matrix.Room, thread.Subject)
 			if ok {
 				ic.dbHandler.UpdateThreadMatrixId(thread.ID, matrixId)
+			} else {
+				break
 			}
-			retryAny = retryAny || !ok
 		}
 		mails := ic.dbHandler.GetMatrixReadyMails()
 		for _, mail := range mails {
@@ -207,11 +207,10 @@ func (ic *InboxCollab) notifyMatrix() {
 			)
 			if ok {
 				ic.dbHandler.UpdateMailMatrixId(mail.ID, matrixId)
+			} else {
+				ic.matrixRequired <- struct{}{}
+				break
 			}
-			retryAny = retryAny || !ok
-		}
-		if retryAny {
-			ic.matrixRequired <- struct{}{}
 		}
 	}
 }

@@ -73,7 +73,8 @@ WHERE id = $1;
 -- name: GetMatrixReadyThreads :many
 SELECT thread.id, mail.subject FROM thread
 JOIN mail ON thread.first_mail = mail.id
-WHERE thread.matrix_id IS NULL;
+WHERE thread.matrix_id IS NULL
+ORDER BY mail.timestamp;
 
 -- name: GetMatrixReadyMails :many
 SELECT mail.*, thread.matrix_id AS root_matrix_id FROM mail

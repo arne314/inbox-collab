@@ -325,6 +325,7 @@ const getMatrixReadyThreads = `-- name: GetMatrixReadyThreads :many
 SELECT thread.id, mail.subject FROM thread
 JOIN mail ON thread.first_mail = mail.id
 WHERE thread.matrix_id IS NULL
+ORDER BY mail.timestamp
 `
 
 type GetMatrixReadyThreadsRow struct {
