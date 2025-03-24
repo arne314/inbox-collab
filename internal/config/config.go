@@ -11,6 +11,10 @@ import (
 	log "github.com/sirupsen/logrus"
 )
 
+type LLMConfig struct {
+	ApiUrl string `toml:"python_api"`
+}
+
 type MailConfig struct {
 	Hostname  string   `toml:"hostname"`
 	Port      int      `toml:"port"`
@@ -19,19 +23,21 @@ type MailConfig struct {
 	Password  string
 }
 
-type LLMConfig struct {
-	ApiUrl string `toml:"python_api"`
+type MatrixConfig struct {
+	Room string `toml:"room"`
+
+	HomeServer    string
+	Username      string
+	Password      string
+	VerifySession bool
 }
 
 type Config struct {
-	Mail map[string]*MailConfig `toml:"mail"`
-	LLM  *LLMConfig             `toml:"llm"`
+	Mail   map[string]*MailConfig `toml:"mail"`
+	LLM    *LLMConfig             `toml:"llm"`
+	Matrix *MatrixConfig          `toml:"matrix"`
 
-	MatrixHomeServer    string
-	MatrixUsername      string
-	MatrixPassword      string
 	DatabaseUrl         string
-	VerifyMatrixSession bool
 	ListMailboxes       bool
 }
 
@@ -61,7 +67,7 @@ func (c *Config) Load() {
 		"List all mailboxes on the mail server that the authenticated user has access to",
 	)
 	flag.Parse()
-	c.VerifyMatrixSession = *flagVerifyMatrix
+	c.Matrix.VerifySession = *flagVerifyMatrix
 	c.ListMailboxes = *flagListMailboxes
 	log.Infof("Loaded config: %+v", c)
 
@@ -70,9 +76,9 @@ func (c *Config) Load() {
 	if err != nil {
 		log.Fatalf("Error loading .env file: %v", err)
 	}
-	c.MatrixHomeServer = c.getenv("MATRIX_HOMESERVER")
-	c.MatrixUsername = c.getenv("MATRIX_USERNAME")
-	c.MatrixPassword = c.getenv("MATRIX_PASSWORD")
+	c.Matrix.HomeServer = c.getenv("MATRIX_HOMESERVER")
+	c.Matrix.Username = c.getenv("MATRIX_USERNAME")
+	c.Matrix.Password = c.getenv("MATRIX_PASSWORD")
 	c.DatabaseUrl = c.getenv("DATABASE_URL")
 
 	for name, mailConfig := range c.Mail {

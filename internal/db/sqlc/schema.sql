@@ -1,7 +1,8 @@
 CREATE TABLE thread (
     id BIGSERIAL PRIMARY KEY,
     enabled BOOLEAN,
-    last_message TIMESTAMP
+    last_message TIMESTAMP,
+    matrix_id TEXT
 );
 
 CREATE TABLE mail (
@@ -18,7 +19,8 @@ CREATE TABLE mail (
     messages JSONB,
     last_message_extraction TIMESTAMP,
     reply_to BIGINT REFERENCES mail(id) ON DELETE SET NULL,
-    thread BIGINT REFERENCES thread(id) ON DELETE SET NULL
+    thread BIGINT REFERENCES thread(id) ON DELETE SET NULL,
+    matrix_id TEXT
 );
 
 ALTER TABLE thread ADD COLUMN first_mail BIGINT REFERENCES mail(id) ON DELETE SET NULL;

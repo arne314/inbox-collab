@@ -70,3 +70,24 @@ UPDATE fetcher
 SET uid_last = $2, uid_validity = $3
 WHERE id = $1;
 
+-- name: GetMatrixReadyThreads :many
+SELECT thread.id, mail.subject FROM thread
+JOIN mail ON thread.first_mail = mail.id
+WHERE thread.matrix_id IS NULL;
+
+-- name: GetMatrixReadyMails :many
+SELECT mail.*, thread.matrix_id AS root_matrix_id FROM mail
+JOIN thread ON mail.thread = thread.id
+WHERE mail.matrix_id IS NULL AND thread.matrix_id IS NOT NULL
+ORDER BY mail.timestamp;
+
+-- name: UpdateThreadMatrixId :exec
+UPDATE thread
+SET matrix_id = $2
+WHERE id = $1;
+
+-- name: UpdateMailMatrixId :exec
+UPDATE mail
+SET matrix_id = $2
+WHERE id = $1;
+

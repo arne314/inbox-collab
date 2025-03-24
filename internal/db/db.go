@@ -198,6 +198,44 @@ func (dh *DbHandler) UpdateMailFetcherState(id string, uidLast uint32, uidValidi
 	}
 }
 
+func (dh *DbHandler) GetMatrixReadyThreads() []*db.GetMatrixReadyThreadsRow {
+	threads, err := dh.queries.GetMatrixReadyThreads(context.Background())
+	if err != nil {
+		log.Errorf("Error getting matrix ready threads from db: %v", err)
+		return []*db.GetMatrixReadyThreadsRow{}
+	}
+	return threads
+}
+
+func (dh *DbHandler) GetMatrixReadyMails() []*db.GetMatrixReadyMailsRow {
+	mails, err := dh.queries.GetMatrixReadyMails(context.Background())
+	if err != nil {
+		log.Errorf("Error getting matrix ready mails from db: %v", err)
+		return []*db.GetMatrixReadyMailsRow{}
+	}
+	return mails
+}
+
+func (dh *DbHandler) UpdateThreadMatrixId(threadId int64, matrixId string) {
+	err := dh.queries.UpdateThreadMatrixId(context.Background(), db.UpdateThreadMatrixIdParams{
+		ID:       threadId,
+		MatrixID: pgtype.Text{String: matrixId, Valid: true},
+	})
+	if err != nil {
+		log.Errorf("Error updating thread matrix id: %v", err)
+	}
+}
+
+func (dh *DbHandler) UpdateMailMatrixId(mailId int64, matrixId string) {
+	err := dh.queries.UpdateMailMatrixId(context.Background(), db.UpdateMailMatrixIdParams{
+		ID:       mailId,
+		MatrixID: pgtype.Text{String: matrixId, Valid: true},
+	})
+	if err != nil {
+		log.Errorf("Error updating mail matrix id: %v", err)
+	}
+}
+
 func (dh *DbHandler) Stop(waitGroup *sync.WaitGroup) {
 	defer waitGroup.Done()
 	dh.pool.Close()

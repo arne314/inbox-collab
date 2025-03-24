@@ -29,6 +29,7 @@ type InboxCollab struct {
 	extractionRequired atomic.Bool
 	extractionDone     atomic.Bool
 	sortingRequired    chan struct{}
+	matrixRequired     chan struct{}
 	fetchedMails       chan []*mail.Mail
 }
 
@@ -60,6 +61,7 @@ func (ic *InboxCollab) Setup(
 	ic.fetchedMails = make(chan []*mail.Mail, 100)
 	ic.doneStoring = make(chan struct{}, 1)
 	ic.sortingRequired = make(chan struct{}, 1)
+	ic.matrixRequired = make(chan struct{}, 10)
 	ic.extractionRequired = atomic.Bool{}
 	ic.extractionRequired.Store(true)
 	ic.extractionDone = atomic.Bool{}
@@ -179,7 +181,38 @@ func (ic *InboxCollab) sortMails() {
 			}
 			ic.dbHandler.CreateThread(mail)
 		}
+		ic.matrixRequired <- struct{}{}
 		log.Infof("Done sorting %v mails", len(mails))
+	}
+}
+
+func (ic *InboxCollab) notifyMatrix() {
+	ic.matrixRequired <- struct{}{} // initial update
+	for range ic.matrixRequired {
+		retryAny := false
+		threads := ic.dbHandler.GetMatrixReadyThreads()
+		for _, thread := range threads {
+			ok, matrixId := ic.matrixHandler.CreateThread(ic.config.Matrix.Room, thread.Subject)
+			if ok {
+				ic.dbHandler.UpdateThreadMatrixId(thread.ID, matrixId)
+			}
+			retryAny = retryAny || !ok
+		}
+		mails := ic.dbHandler.GetMatrixReadyMails()
+		for _, mail := range mails {
+			ok, matrixId := ic.matrixHandler.AddReply(
+				ic.config.Matrix.Room,
+				mail.RootMatrixID.String,
+				*mail.Messages.Messages[0].Content,
+			)
+			if ok {
+				ic.dbHandler.UpdateMailMatrixId(mail.ID, matrixId)
+			}
+			retryAny = retryAny || !ok
+		}
+		if retryAny {
+			ic.matrixRequired <- struct{}{}
+		}
 	}
 }
 
@@ -187,6 +220,7 @@ func (ic *InboxCollab) Run() {
 	go ic.storeMails()
 	go ic.extractMessages()
 	go ic.sortMails()
+	go ic.notifyMatrix()
 }
 
 func (ic *InboxCollab) Stop(waitGroup *sync.WaitGroup) {

@@ -73,7 +73,7 @@ func (mc *MatrixClient) ShowSAS(
 }
 
 func (mc *MatrixClient) Login(cfg *config.Config) {
-	client, err := mautrix.NewClient(cfg.MatrixHomeServer, "", "")
+	client, err := mautrix.NewClient(cfg.Matrix.HomeServer, "", "")
 	mc.client = client
 	if err != nil {
 		log.Fatalf("Invalid matrix config: %v", err)
@@ -110,9 +110,9 @@ func (mc *MatrixClient) Login(cfg *config.Config) {
 		Type: mautrix.AuthTypePassword,
 		Identifier: mautrix.UserIdentifier{
 			Type: mautrix.IdentifierTypeUser,
-			User: cfg.MatrixUsername,
+			User: cfg.Matrix.Username,
 		},
-		Password: cfg.MatrixPassword,
+		Password: cfg.Matrix.Password,
 	}
 	err = cryptoHelper.Init(context.Background())
 	if err != nil {
@@ -129,8 +129,40 @@ func (mc *MatrixClient) Login(cfg *config.Config) {
 		log.Fatalf("Error setting up verification helper: %v", err)
 	}
 	mc.verificationHelper = verificationHelper
-	mc.autoVerifySession = cfg.VerifyMatrixSession
+	mc.autoVerifySession = cfg.Matrix.VerifySession
 	log.Info("Logged into matrix")
+}
+
+func (mc *MatrixClient) SendRoomMessage(roomId string, text string) (bool, string) {
+	resp, err := mc.client.SendText(context.Background(), id.RoomID(roomId), text)
+	if err != nil {
+		log.Errorf("Error sending message to matrix: %v", err)
+		return false, ""
+	}
+	return true, resp.EventID.String()
+}
+
+func (mc *MatrixClient) SendThreadMessage(
+	roomId string, threadId string, text string,
+) (bool, string) {
+	resp, err := mc.client.SendMessageEvent(
+		context.Background(),
+		id.RoomID(roomId),
+		event.EventMessage,
+		&event.MessageEventContent{
+			Body:    text,
+			MsgType: event.MsgText,
+			RelatesTo: &event.RelatesTo{
+				EventID: id.EventID(threadId),
+				Type:    event.RelThread,
+			},
+		},
+	)
+	if err != nil {
+		log.Errorf("Error responding to thread on matrix: %v", err)
+		return false, ""
+	}
+	return true, resp.EventID.String()
 }
 
 func (mc *MatrixClient) Run() {

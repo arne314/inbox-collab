@@ -21,6 +21,14 @@ func (mh *MatrixHandler) Run() {
 	mh.client.Run()
 }
 
+func (mh *MatrixHandler) CreateThread(roomId string, subject string) (bool, string) {
+	return mh.client.SendRoomMessage(roomId, subject)
+}
+
+func (mh *MatrixHandler) AddReply(roomId string, threadId string, message string) (bool, string) {
+	return mh.client.SendThreadMessage(roomId, threadId, message)
+}
+
 func (mh *MatrixHandler) Stop(waitGroup *sync.WaitGroup) {
 	defer waitGroup.Done()
 	mh.client.Stop()
