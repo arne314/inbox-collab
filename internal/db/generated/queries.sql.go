@@ -259,7 +259,7 @@ func (q *Queries) GetMailsRequiringSorting(ctx context.Context) ([]*Mail, error)
 }
 
 const getMatrixReadyMails = `-- name: GetMatrixReadyMails :many
-SELECT mail.id, mail.header_id, mail.header_in_reply_to, mail.header_references, mail.timestamp, mail.name_from, mail.addr_from, mail.addr_to, mail.subject, mail.body, mail.messages, mail.last_message_extraction, mail.reply_to, mail.thread, mail.matrix_id, thread.matrix_id AS root_matrix_id FROM mail
+SELECT mail.id, mail.header_id, mail.header_in_reply_to, mail.header_references, mail.timestamp, mail.name_from, mail.addr_from, mail.addr_to, mail.subject, mail.body, mail.messages, mail.last_message_extraction, mail.reply_to, mail.thread, mail.matrix_id, thread.matrix_id AS root_matrix_id, mail.id = thread.first_mail AS is_first FROM mail
 JOIN thread ON mail.thread = thread.id
 WHERE mail.matrix_id IS NULL AND thread.matrix_id IS NOT NULL
 ORDER BY mail.timestamp
@@ -282,6 +282,7 @@ type GetMatrixReadyMailsRow struct {
 	Thread                pgtype.Int8
 	MatrixID              pgtype.Text
 	RootMatrixID          pgtype.Text
+	IsFirst               bool
 }
 
 func (q *Queries) GetMatrixReadyMails(ctx context.Context) ([]*GetMatrixReadyMailsRow, error) {
@@ -310,6 +311,7 @@ func (q *Queries) GetMatrixReadyMails(ctx context.Context) ([]*GetMatrixReadyMai
 			&i.Thread,
 			&i.MatrixID,
 			&i.RootMatrixID,
+			&i.IsFirst,
 		); err != nil {
 			return nil, err
 		}
@@ -322,15 +324,16 @@ func (q *Queries) GetMatrixReadyMails(ctx context.Context) ([]*GetMatrixReadyMai
 }
 
 const getMatrixReadyThreads = `-- name: GetMatrixReadyThreads :many
-SELECT thread.id, mail.subject FROM thread
+SELECT thread.id, mail.subject, mail.name_from FROM thread
 JOIN mail ON thread.first_mail = mail.id
 WHERE thread.matrix_id IS NULL
 ORDER BY mail.timestamp
 `
 
 type GetMatrixReadyThreadsRow struct {
-	ID      int64
-	Subject string
+	ID       int64
+	Subject  string
+	NameFrom pgtype.Text
 }
 
 func (q *Queries) GetMatrixReadyThreads(ctx context.Context) ([]*GetMatrixReadyThreadsRow, error) {
@@ -342,7 +345,7 @@ func (q *Queries) GetMatrixReadyThreads(ctx context.Context) ([]*GetMatrixReadyT
 	var items []*GetMatrixReadyThreadsRow
 	for rows.Next() {
 		var i GetMatrixReadyThreadsRow
-		if err := rows.Scan(&i.ID, &i.Subject); err != nil {
+		if err := rows.Scan(&i.ID, &i.Subject, &i.NameFrom); err != nil {
 			return nil, err
 		}
 		items = append(items, &i)
