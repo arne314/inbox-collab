@@ -191,7 +191,9 @@ func (ic *InboxCollab) notifyMatrix() {
 	for range ic.matrixRequired {
 		threads := ic.dbHandler.GetMatrixReadyThreads()
 		for _, thread := range threads {
-			ok, matrixId := ic.matrixHandler.CreateThread(ic.config.Matrix.Room, thread.Subject)
+			ok, matrixId := ic.matrixHandler.CreateThread(
+				ic.config.Matrix.Room, thread.NameFrom.String, thread.Subject,
+			)
 			if ok {
 				ic.dbHandler.UpdateThreadMatrixId(thread.ID, matrixId)
 			} else {
@@ -201,9 +203,8 @@ func (ic *InboxCollab) notifyMatrix() {
 		mails := ic.dbHandler.GetMatrixReadyMails()
 		for _, mail := range mails {
 			ok, matrixId := ic.matrixHandler.AddReply(
-				ic.config.Matrix.Room,
-				mail.RootMatrixID.String,
-				*mail.Messages.Messages[0].Content,
+				ic.config.Matrix.Room, mail.RootMatrixID.String, mail.NameFrom.String, mail.Subject,
+				mail.Timestamp.Time, *mail.Messages.Messages[0].Content, mail.IsFirst,
 			)
 			if ok {
 				ic.dbHandler.UpdateMailMatrixId(mail.ID, matrixId)

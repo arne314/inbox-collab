@@ -140,8 +140,18 @@ func (mc *MatrixClient) SleepOnRateLimit(err error) {
 	}
 }
 
-func (mc *MatrixClient) SendRoomMessage(roomId string, text string) (bool, string) {
-	resp, err := mc.client.SendText(context.Background(), id.RoomID(roomId), text)
+func (mc *MatrixClient) SendRoomMessage(roomId string, text string, html string) (bool, string) {
+	resp, err := mc.client.SendMessageEvent(
+		context.Background(),
+		id.RoomID(roomId),
+		event.EventMessage,
+		&event.MessageEventContent{
+			MsgType:       event.MsgText,
+			Body:          text,
+			Format:        event.FormatHTML,
+			FormattedBody: html,
+		},
+	)
 	if err != nil {
 		log.Errorf("Error sending message to matrix: %v", err)
 		mc.SleepOnRateLimit(err)
@@ -151,15 +161,17 @@ func (mc *MatrixClient) SendRoomMessage(roomId string, text string) (bool, strin
 }
 
 func (mc *MatrixClient) SendThreadMessage(
-	roomId string, threadId string, text string,
+	roomId string, threadId string, text string, html string,
 ) (bool, string) {
 	resp, err := mc.client.SendMessageEvent(
 		context.Background(),
 		id.RoomID(roomId),
 		event.EventMessage,
 		&event.MessageEventContent{
-			Body:    text,
-			MsgType: event.MsgText,
+			Body:          text,
+			MsgType:       event.MsgText,
+			Format:        event.FormatHTML,
+			FormattedBody: html,
 			RelatesTo: &event.RelatesTo{
 				EventID: id.EventID(threadId),
 				Type:    event.RelThread,
