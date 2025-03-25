@@ -204,8 +204,10 @@ func (ic *InboxCollab) sortMails() {
 }
 
 func (ic *InboxCollab) notifyMatrix() {
+	ic.dbHandler.AddAllRooms()
 	ic.matrixRequired <- struct{}{} // initial update
 	for range ic.matrixRequired {
+		// post new threads
 		threads := ic.dbHandler.GetMatrixReadyThreads()
 		for _, thread := range threads {
 			ok, roomId, messageId := ic.matrixHandler.CreateThread(
@@ -219,6 +221,7 @@ func (ic *InboxCollab) notifyMatrix() {
 				break
 			}
 		}
+		// add messages to threads
 		mails := ic.dbHandler.GetMatrixReadyMails()
 		for _, mail := range mails {
 			ok, matrixId := ic.matrixHandler.AddReply(
@@ -227,6 +230,21 @@ func (ic *InboxCollab) notifyMatrix() {
 			)
 			if ok {
 				ic.dbHandler.UpdateMailMatrixId(mail.ID, matrixId)
+			} else {
+				ic.matrixRequired <- struct{}{}
+				break
+			}
+		}
+		// update overview messages
+		for overviewRoom := range ic.config.Matrix.RoomsOverview {
+			messageId, authors, subjects, rooms, threadMsgs := ic.dbHandler.GetOverviewThreads(
+				overviewRoom,
+			)
+			ok, messageId := ic.matrixHandler.UpdateThreadOverview(
+				overviewRoom, messageId, authors, subjects, rooms, threadMsgs,
+			)
+			if ok {
+				ic.dbHandler.OverviewMessageUpdated(overviewRoom, messageId)
 			} else {
 				ic.matrixRequired <- struct{}{}
 				break

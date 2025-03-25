@@ -29,6 +29,12 @@ func (mh *MatrixHandler) Run() {
 	mh.client.Run()
 }
 
+func formatThreadTitle(author string, subject string) (string, string) {
+	textMessage := fmt.Sprintf("%s: %s", author, subject)
+	htmlMessage := fmt.Sprintf("<strong>%s</strong>: %s", author, subject)
+	return textMessage, htmlMessage
+}
+
 func formatHtml(text string) string {
 	return strings.ReplaceAll(text, "\n", "<br>")
 }
@@ -80,8 +86,7 @@ func (mh *MatrixHandler) determineMatrixRoom(
 func (mh *MatrixHandler) CreateThread(
 	fetcher string, addrFrom string, addrTo []string, author string, subject string,
 ) (bool, string, string) {
-	textMessage := fmt.Sprintf("%s: %s", author, subject)
-	htmlMessage := fmt.Sprintf("<strong>%s</strong>: %s", author, subject)
+	textMessage, htmlMessage := formatThreadTitle(author, subject)
 	roomId := mh.determineMatrixRoom(fetcher, addrFrom, addrTo)
 	ok, messageId := mh.client.SendRoomMessage(roomId, textMessage, htmlMessage)
 	return ok, roomId, messageId
@@ -121,6 +126,41 @@ func (mh *MatrixHandler) AddReply(
 		}
 	}
 	return mh.client.SendThreadMessage(roomId, threadId, textMessage, htmlMessage)
+}
+
+func (mh *MatrixHandler) UpdateThreadOverview(
+	overviewRoomId string, overviewMessageId string, authors []string,
+	subjects []string, rooms []string, threadMsgs []string,
+) (bool, string) {
+	var textBuilder, htmlBuilder strings.Builder
+	textBuilder.WriteString("Overview:\n")
+	htmlBuilder.WriteString("<h2>Overview</h2><br>")
+
+	for i := 0; i < len(authors); i++ {
+		link := fmt.Sprintf(
+			"https://matrix.to/#/%s/%s?via=%s",
+			rooms[i], threadMsgs[i], mh.config.HomeServer,
+		)
+		textTitle, htlmTitle := formatThreadTitle(authors[i], subjects[i])
+		textLine := fmt.Sprintf("%s - %s\n", textTitle, link)
+		htmlLine := fmt.Sprintf("%s - %s<br>", htlmTitle, link)
+
+		if htmlBuilder.Len()+len(htmlLine) > 10000 {
+			warning := fmt.Sprintf("%v additional threads are not listed here.", len(authors)-i)
+			textBuilder.WriteString(fmt.Sprintf("\n\n%s", warning))
+			htmlBuilder.WriteString(fmt.Sprintf("<br><br>%s", warning))
+			break
+		}
+		textBuilder.WriteString(textLine)
+		htmlBuilder.WriteString(htmlLine)
+	}
+
+	textMessage, htmlMessage := textBuilder.String(), htmlBuilder.String()
+	if overviewMessageId == "" {
+		return mh.client.SendRoomMessage(overviewRoomId, textMessage, htmlMessage)
+	} else {
+		return mh.client.EditRoomMessage(overviewRoomId, overviewMessageId, textMessage, htmlMessage)
+	}
 }
 
 func (mh *MatrixHandler) Stop(waitGroup *sync.WaitGroup) {

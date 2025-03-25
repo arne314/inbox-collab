@@ -25,12 +25,15 @@ type MailConfig struct {
 }
 
 type MatrixConfig struct {
-	Aliases            map[string]string `toml:"aliases"`
-	DefaultRoom        string            `toml:"default_room"`
-	RoomsAddrFrom      map[string]string `toml:"rooms_addr_from"`
-	RoomsAddrTo        map[string]string `toml:"rooms_addr_to"`
-	RoomsMailbox       map[string]string `toml:"rooms_mailbox"`
-	HeadBlacklist      []string          `toml:"head_blacklist"`
+	Aliases       map[string]string   `toml:"aliases"`
+	DefaultRoom   string              `toml:"default_room"`
+	RoomsAddrFrom map[string]string   `toml:"rooms_addr_from"`
+	RoomsAddrTo   map[string]string   `toml:"rooms_addr_to"`
+	RoomsMailbox  map[string]string   `toml:"rooms_mailbox"`
+	RoomsOverview map[string][]string `toml:"overview"`
+	HeadBlacklist []string            `toml:"head_blacklist"`
+
+	AllRooms           []string
 	RoomsAddrFromRegex map[*regexp.Regexp]string
 	RoomsAddrToRegex   map[*regexp.Regexp]string
 	RoomsMailboxRegex  map[*regexp.Regexp]string
@@ -56,10 +59,14 @@ func (c *Config) getenv(name string) string {
 }
 
 func (c *Config) getRoomByAlias(alias string) string {
+	var result string
 	if room, ok := c.Matrix.Aliases[alias]; ok {
-		return room
+		result = room
+	} else {
+		result = alias
 	}
-	return alias
+	c.Matrix.AllRooms = append(c.Matrix.AllRooms, result)
+	return result
 }
 
 func (c *Config) Load() {
@@ -110,6 +117,7 @@ func (c *Config) Load() {
 	}
 
 	// validation
+	c.Matrix.AllRooms = []string{}
 	c.Matrix.HeadBlacklistRegex = make([]*regexp.Regexp, len(c.Matrix.HeadBlacklist))
 	for i, addr := range c.Matrix.HeadBlacklist {
 		regex, err := regexp.CompilePOSIX(addr)
@@ -135,5 +143,16 @@ func (c *Config) Load() {
 	validateRoomsRegex(c.Matrix.RoomsAddrFrom, c.Matrix.RoomsAddrFromRegex)
 	validateRoomsRegex(c.Matrix.RoomsAddrTo, c.Matrix.RoomsAddrToRegex)
 	validateRoomsRegex(c.Matrix.RoomsMailbox, c.Matrix.RoomsMailboxRegex)
+
 	c.Matrix.DefaultRoom = c.getRoomByAlias(c.Matrix.DefaultRoom)
+	overview := make(map[string][]string)
+	for room, targets := range c.Matrix.RoomsOverview {
+		delete(c.Matrix.RoomsOverview, room)
+		targetRooms := make([]string, len(targets))
+		for i, t := range targets {
+			targetRooms[i] = c.getRoomByAlias(t)
+		}
+		overview[c.getRoomByAlias(room)] = targetRooms
+	}
+	c.Matrix.RoomsOverview = overview
 }

@@ -99,3 +99,24 @@ UPDATE mail
 SET matrix_id = $2
 WHERE id = $1;
 
+-- name: GetOverviewThreads :many
+SELECT thread.*, mail.name_from, mail.subject, mail.matrix_id AS message_id
+FROM thread
+JOIN mail ON mail.id = thread.first_mail
+WHERE thread.enabled AND thread.matrix_room_id = ANY($1::text[]) AND thread.matrix_id IS NOT NULL
+ORDER BY thread.last_message DESC;
+
+-- name: GetRoom :one
+SELECT * FROM room
+WHERE id = $1 LIMIT 1;
+
+-- name: AddRoom :exec
+INSERT INTO room (id)
+VALUES ($1)
+ON CONFLICT (id) DO NOTHING;
+
+-- name: UpdateRoomOverviewMessage :exec
+UPDATE room
+SET overview_message_id = $2, overview_message_last_update = CURRENT_TIMESTAMP
+WHERE id = $1;
+

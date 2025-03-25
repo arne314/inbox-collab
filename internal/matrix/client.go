@@ -2,6 +2,7 @@ package matrix
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"time"
 
@@ -75,6 +76,7 @@ func (mc *MatrixClient) ShowSAS(
 
 func (mc *MatrixClient) Login(cfg *config.Config) {
 	client, err := mautrix.NewClient(cfg.Matrix.HomeServer, "", "")
+	client.DefaultHTTPRetries = 3
 	mc.client = client
 	if err != nil {
 		log.Fatalf("Invalid matrix config: %v", err)
@@ -168,8 +170,8 @@ func (mc *MatrixClient) SendThreadMessage(
 		id.RoomID(roomId),
 		event.EventMessage,
 		&event.MessageEventContent{
-			Body:          text,
 			MsgType:       event.MsgText,
+			Body:          text,
 			Format:        event.FormatHTML,
 			FormattedBody: html,
 			RelatesTo: &event.RelatesTo{
@@ -184,6 +186,61 @@ func (mc *MatrixClient) SendThreadMessage(
 		return false, ""
 	}
 	return true, resp.EventID.String()
+}
+
+func (mc *MatrixClient) MessageRedacted(roomId string, messageId string) bool {
+	evt, err := mc.client.GetEvent(context.Background(), id.RoomID(roomId), id.EventID(messageId))
+	if err != nil {
+		log.Errorf("Error fetching matrix event: %v", err)
+		return true
+	}
+	return len(evt.Content.Raw) == 0
+}
+
+func (mc *MatrixClient) EditRoomMessage(
+	roomId string, messageId string, text string, html string,
+) (bool, string) {
+	var err error
+	ctx := context.Background()
+	if mc.MessageRedacted(roomId, messageId) {
+		return mc.SendRoomMessage(roomId, text, html)
+	}
+	_, err = mc.client.SendMessageEvent(
+		ctx,
+		id.RoomID(roomId),
+		event.EventMessage,
+		&event.MessageEventContent{
+			MsgType:       event.MsgText,
+			Body:          fmt.Sprintf("* %s", text),
+			Format:        event.FormatHTML,
+			FormattedBody: fmt.Sprintf("* %s", html),
+			NewContent: &event.MessageEventContent{
+				MsgType:       event.MsgText,
+				Body:          text,
+				Format:        event.FormatHTML,
+				FormattedBody: html,
+			},
+			RelatesTo: &event.RelatesTo{
+				EventID: id.EventID(messageId),
+				Type:    event.RelReplace,
+			},
+		},
+	)
+	if err != nil {
+		if strings.Contains(err.Error(), "M_TOO_LARGE") {
+			_, err = mc.client.RedactEvent(ctx, id.RoomID(roomId), id.EventID(messageId))
+			if err != nil {
+				log.Errorf("Error redacting message event: %v", err)
+				mc.SleepOnRateLimit(err)
+				return false, ""
+			}
+			return mc.SendRoomMessage(roomId, text, html)
+		}
+		log.Errorf("Error updating message on matrix: %v", err)
+		mc.SleepOnRateLimit(err)
+		return false, ""
+	}
+	return true, messageId
 }
 
 func (mc *MatrixClient) Run() {

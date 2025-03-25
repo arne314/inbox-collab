@@ -4,12 +4,20 @@ CREATE TABLE fetcher (
     uid_validity INT NOT NULL DEFAULT 1
 );
 
+CREATE TABLE room (
+    id TEXT PRIMARY KEY,
+    name TEXT,
+    name_last_update TIMESTAMP,
+    overview_message_id TEXT,
+    overview_message_last_update TIMESTAMP
+);
+
 CREATE TABLE thread (
     id BIGSERIAL PRIMARY KEY,
     enabled BOOLEAN,
     last_message TIMESTAMP,
     matrix_id TEXT,
-    matrix_room_id TEXT
+    matrix_room_id TEXT REFERENCES room(id) ON DELETE SET NULL ON UPDATE CASCADE
 );
 
 CREATE TABLE mail (

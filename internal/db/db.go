@@ -249,6 +249,76 @@ func (dh *DbHandler) UpdateMailMatrixId(mailId int64, matrixId string) {
 	}
 }
 
+func (dh *DbHandler) AddAllRooms() {
+	ctx := context.Background()
+	for _, room := range dh.config.Matrix.AllRooms {
+		err := dh.queries.AddRoom(ctx, room)
+		if err != nil {
+			log.Errorf("Error adding room to db: %v", err)
+		}
+	}
+}
+
+func (dh *DbHandler) UpdateRoomOverviewMessage(roomId string, messageId string) {
+	err := dh.queries.UpdateRoomOverviewMessage(
+		context.Background(),
+		db.UpdateRoomOverviewMessageParams{
+			ID:                roomId,
+			OverviewMessageID: pgtype.Text{String: messageId, Valid: true},
+		},
+	)
+	if err != nil {
+		log.Errorf("Error updating room overview message id: %v", err)
+	}
+}
+
+func (dh *DbHandler) GetOverviewThreads(
+	overviewRoom string,
+) (messageId string, authors []string, subjects []string, rooms []string, threadMsgs []string) {
+	ctx := context.Background()
+	room, err := dh.queries.GetRoom(ctx, overviewRoom)
+	if err != nil {
+		log.Errorf("Error reading overview room %v from db: %v", overviewRoom, err)
+		return "", []string{}, []string{}, []string{}, []string{}
+	}
+	messageId = room.OverviewMessageID.String
+
+	targets := dh.config.Matrix.RoomsOverview[overviewRoom]
+	if len(targets) == 0 {
+		targets = dh.config.Matrix.AllRooms
+	}
+	threads, err := dh.queries.GetOverviewThreads(ctx, targets)
+	if err != nil {
+		log.Errorf("Error reading overview room %v from db: %v", overviewRoom, err)
+		return "", []string{}, []string{}, []string{}, []string{}
+	}
+	log.Infof("Fetched %v threads for overview room %v from db", len(threads), overviewRoom)
+	authors = make([]string, len(threads))
+	subjects = make([]string, len(threads))
+	rooms = make([]string, len(threads))
+	threadMsgs = make([]string, len(threads))
+	for i, thread := range threads {
+		authors[i] = thread.NameFrom.String
+		subjects[i] = thread.Subject
+		rooms[i] = thread.MatrixRoomID.String
+		threadMsgs[i] = thread.MessageID.String
+	}
+	return
+}
+
+func (dh *DbHandler) OverviewMessageUpdated(roomId string, messageId string) {
+	err := dh.queries.UpdateRoomOverviewMessage(
+		context.Background(),
+		db.UpdateRoomOverviewMessageParams{
+			ID:                roomId,
+			OverviewMessageID: pgtype.Text{String: messageId, Valid: true},
+		},
+	)
+	if err != nil {
+		log.Errorf("Error updating overview message: %v", err)
+	}
+}
+
 func (dh *DbHandler) Stop(waitGroup *sync.WaitGroup) {
 	defer waitGroup.Done()
 	dh.pool.Close()
