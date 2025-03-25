@@ -25,6 +25,7 @@ type MailConfig struct {
 }
 
 type MatrixConfig struct {
+	Aliases            map[string]string `toml:"aliases"`
 	DefaultRoom        string            `toml:"default_room"`
 	RoomsAddrFrom      map[string]string `toml:"rooms_addr_from"`
 	RoomsAddrTo        map[string]string `toml:"rooms_addr_to"`
@@ -52,6 +53,13 @@ type Config struct {
 
 func (c *Config) getenv(name string) string {
 	return os.Getenv(name)
+}
+
+func (c *Config) getRoomByAlias(alias string) string {
+	if room, ok := c.Matrix.Aliases[alias]; ok {
+		return room
+	}
+	return alias
 }
 
 func (c *Config) Load() {
@@ -117,7 +125,7 @@ func (c *Config) Load() {
 			if err != nil {
 				log.Fatalf("Matrix room config \"%s\" invalid: %v", addr, err)
 			} else {
-				regexps[regex] = room
+				regexps[regex] = c.getRoomByAlias(room)
 			}
 		}
 	}
@@ -127,4 +135,5 @@ func (c *Config) Load() {
 	validateRoomsRegex(c.Matrix.RoomsAddrFrom, c.Matrix.RoomsAddrFromRegex)
 	validateRoomsRegex(c.Matrix.RoomsAddrTo, c.Matrix.RoomsAddrToRegex)
 	validateRoomsRegex(c.Matrix.RoomsMailbox, c.Matrix.RoomsMailboxRegex)
+	c.Matrix.DefaultRoom = c.getRoomByAlias(c.Matrix.DefaultRoom)
 }
