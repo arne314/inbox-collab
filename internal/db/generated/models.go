@@ -35,6 +35,14 @@ type Mail struct {
 	MatrixID              pgtype.Text
 }
 
+type Room struct {
+	ID                        string
+	Name                      pgtype.Text
+	NameLastUpdate            pgtype.Timestamp
+	OverviewMessageID         pgtype.Text
+	OverviewMessageLastUpdate pgtype.Timestamp
+}
+
 type Thread struct {
 	ID           int64
 	Enabled      pgtype.Bool

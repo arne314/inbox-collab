@@ -91,6 +91,17 @@ func (q *Queries) AddMail(ctx context.Context, arg AddMailParams) ([]*Mail, erro
 	return items, nil
 }
 
+const addRoom = `-- name: AddRoom :exec
+INSERT INTO room (id)
+VALUES ($1)
+ON CONFLICT (id) DO NOTHING
+`
+
+func (q *Queries) AddRoom(ctx context.Context, id string) error {
+	_, err := q.db.Exec(ctx, addRoom, id)
+	return err
+}
+
 const addThread = `-- name: AddThread :one
 INSERT INTO thread (enabled, last_message, first_mail, last_mail)
 VALUES (true, CURRENT_TIMESTAMP, $1, $1)
@@ -385,6 +396,58 @@ func (q *Queries) GetMatrixReadyThreads(ctx context.Context) ([]*GetMatrixReadyT
 	return items, nil
 }
 
+const getOverviewThreads = `-- name: GetOverviewThreads :many
+SELECT thread.id, thread.enabled, thread.last_message, thread.matrix_id, thread.matrix_room_id, thread.first_mail, thread.last_mail, mail.name_from, mail.subject, mail.matrix_id AS message_id
+FROM thread
+JOIN mail ON mail.id = thread.first_mail
+WHERE thread.enabled AND thread.matrix_room_id = ANY($1::text[]) AND thread.matrix_id IS NOT NULL
+ORDER BY thread.last_message DESC
+`
+
+type GetOverviewThreadsRow struct {
+	ID           int64
+	Enabled      pgtype.Bool
+	LastMessage  pgtype.Timestamp
+	MatrixID     pgtype.Text
+	MatrixRoomID pgtype.Text
+	FirstMail    pgtype.Int8
+	LastMail     pgtype.Int8
+	NameFrom     pgtype.Text
+	Subject      string
+	MessageID    pgtype.Text
+}
+
+func (q *Queries) GetOverviewThreads(ctx context.Context, dollar_1 []string) ([]*GetOverviewThreadsRow, error) {
+	rows, err := q.db.Query(ctx, getOverviewThreads, dollar_1)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []*GetOverviewThreadsRow
+	for rows.Next() {
+		var i GetOverviewThreadsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Enabled,
+			&i.LastMessage,
+			&i.MatrixID,
+			&i.MatrixRoomID,
+			&i.FirstMail,
+			&i.LastMail,
+			&i.NameFrom,
+			&i.Subject,
+			&i.MessageID,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, &i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const getReferencedThreadParent = `-- name: GetReferencedThreadParent :many
 SELECT id, fetcher, header_id, header_in_reply_to, header_references, timestamp, name_from, addr_from, addr_to, subject, body, messages, last_message_extraction, sorted, reply_to, thread, matrix_id FROM mail
 WHERE thread IS NOT NULL AND header_id = ANY($1::text[])
@@ -428,6 +491,24 @@ func (q *Queries) GetReferencedThreadParent(ctx context.Context, dollar_1 []stri
 		return nil, err
 	}
 	return items, nil
+}
+
+const getRoom = `-- name: GetRoom :one
+SELECT id, name, name_last_update, overview_message_id, overview_message_last_update FROM room
+WHERE id = $1 LIMIT 1
+`
+
+func (q *Queries) GetRoom(ctx context.Context, id string) (*Room, error) {
+	row := q.db.QueryRow(ctx, getRoom, id)
+	var i Room
+	err := row.Scan(
+		&i.ID,
+		&i.Name,
+		&i.NameLastUpdate,
+		&i.OverviewMessageID,
+		&i.OverviewMessageLastUpdate,
+	)
+	return &i, err
 }
 
 const mailCount = `-- name: MailCount :one
@@ -515,6 +596,22 @@ type UpdateMailSortingParams struct {
 
 func (q *Queries) UpdateMailSorting(ctx context.Context, arg UpdateMailSortingParams) error {
 	_, err := q.db.Exec(ctx, updateMailSorting, arg.ID, arg.Thread, arg.ReplyTo)
+	return err
+}
+
+const updateRoomOverviewMessage = `-- name: UpdateRoomOverviewMessage :exec
+UPDATE room
+SET overview_message_id = $2, overview_message_last_update = CURRENT_TIMESTAMP
+WHERE id = $1
+`
+
+type UpdateRoomOverviewMessageParams struct {
+	ID                string
+	OverviewMessageID pgtype.Text
+}
+
+func (q *Queries) UpdateRoomOverviewMessage(ctx context.Context, arg UpdateRoomOverviewMessageParams) error {
+	_, err := q.db.Exec(ctx, updateRoomOverviewMessage, arg.ID, arg.OverviewMessageID)
 	return err
 }
 
