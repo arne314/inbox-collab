@@ -17,6 +17,7 @@ type Fetcher struct {
 
 type Mail struct {
 	ID                    int64
+	Fetcher               pgtype.Text
 	HeaderID              string
 	HeaderInReplyTo       pgtype.Text
 	HeaderReferences      []string
@@ -28,16 +29,18 @@ type Mail struct {
 	Body                  *pgtype.Text
 	Messages              *db.ExtractedMessages
 	LastMessageExtraction pgtype.Timestamp
+	Sorted                bool
 	ReplyTo               pgtype.Int8
 	Thread                pgtype.Int8
 	MatrixID              pgtype.Text
 }
 
 type Thread struct {
-	ID          int64
-	Enabled     pgtype.Bool
-	LastMessage pgtype.Timestamp
-	MatrixID    pgtype.Text
-	FirstMail   pgtype.Int8
-	LastMail    pgtype.Int8
+	ID           int64
+	Enabled      pgtype.Bool
+	LastMessage  pgtype.Timestamp
+	MatrixID     pgtype.Text
+	MatrixRoomID pgtype.Text
+	FirstMail    pgtype.Int8
+	LastMail     pgtype.Int8
 }
