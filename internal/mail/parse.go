@@ -82,6 +82,7 @@ func (mf *MailFetcher) parseMessage(msg *imapclient.FetchMessageData) *Mail {
 		attachments = append(attachments, att.FileName)
 	}
 	parsedMail := &Mail{
+		Fetcher:     mf.name,
 		MessageId:   mf.parseIds(envelope.GetHeader("Message-ID"), false)[0],
 		InReplyTo:   mf.parseIds(envelope.GetHeader("In-Reply-To"), false)[0],
 		References:  mf.parseIds(envelope.GetHeader("References"), true),

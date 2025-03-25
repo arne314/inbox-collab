@@ -61,7 +61,7 @@ func (ic *InboxCollab) Setup(
 	ic.fetchedMails = make(chan []*mail.Mail, 100)
 	ic.doneStoring = make(chan struct{}, 1)
 	ic.sortingRequired = make(chan struct{}, 1)
-	ic.matrixRequired = make(chan struct{}, 10)
+	ic.matrixRequired = make(chan struct{}, 100)
 	ic.extractionRequired = atomic.Bool{}
 	ic.extractionRequired.Store(true)
 	ic.extractionDone = atomic.Bool{}
@@ -82,6 +82,7 @@ func (ic *InboxCollab) storeMails() {
 		var modelled []*model.Mail
 		for _, mail := range chunk {
 			modelled = append(modelled, &model.Mail{
+				Fetcher:          pgtype.Text{String: mail.Fetcher, Valid: true},
 				HeaderID:         mail.MessageId,
 				HeaderInReplyTo:  pgtype.Text{String: mail.InReplyTo, Valid: true},
 				HeaderReferences: mail.References,
@@ -160,26 +161,42 @@ func (ic *InboxCollab) sortMails() {
 			continue
 		}
 		sortingRequested.Store(false)
-
-		ic.dbHandler.AutoUpdateMailReplyTo()
+		ic.dbHandler.AutoUpdateMailSorting()
 		mails := ic.dbHandler.GetMailsRequiringSorting()
 		if len(mails) == 0 {
 			continue
 		}
 		log.Infof("Sorting %v mails...", len(mails))
 		for _, mail := range mails {
-			var threadParent *model.Mail
+			var threadId int64
 			if mail.ReplyTo.Valid {
-				threadParent = ic.dbHandler.GetMailById(mail.ReplyTo.Int64)
+				if t := ic.dbHandler.GetMailById(mail.ReplyTo.Int64).Thread; t.Valid {
+					threadId = t.Int64
+				}
 			}
-			if threadParent == nil {
-				threadParent = ic.dbHandler.GetReferencedThreadParent(mail)
+			if threadId == 0 {
+				if m := ic.dbHandler.GetReferencedThreadParent(mail); m != nil {
+					if t := m.Thread; t.Valid {
+						threadId = t.Int64
+					}
+				}
 			}
-			if threadParent != nil && threadParent.Thread.Valid {
-				ic.dbHandler.AddMailToThread(mail, threadParent.Thread.Int64)
+			if threadId != 0 {
+				ic.dbHandler.AddMailToThread(mail, threadId)
 				continue
 			}
-			ic.dbHandler.CreateThread(mail)
+			headAllowed := true
+			for _, regex := range ic.config.Matrix.HeadBlacklistRegex {
+				if regex.MatchString(mail.AddrFrom.String) {
+					headAllowed = false
+					break
+				}
+			}
+			if headAllowed {
+				ic.dbHandler.CreateThread(mail)
+			} else {
+				ic.dbHandler.MarkMailAsSorted(mail)
+			}
 		}
 		ic.matrixRequired <- struct{}{}
 		log.Infof("Done sorting %v mails", len(mails))
@@ -191,20 +208,22 @@ func (ic *InboxCollab) notifyMatrix() {
 	for range ic.matrixRequired {
 		threads := ic.dbHandler.GetMatrixReadyThreads()
 		for _, thread := range threads {
-			ok, matrixId := ic.matrixHandler.CreateThread(
-				ic.config.Matrix.Room, thread.NameFrom.String, thread.Subject,
+			ok, roomId, messageId := ic.matrixHandler.CreateThread(
+				thread.Fetcher.String, thread.AddrFrom.String, thread.AddrTo,
+				thread.NameFrom.String, thread.Subject,
 			)
 			if ok {
-				ic.dbHandler.UpdateThreadMatrixId(thread.ID, matrixId)
+				ic.dbHandler.UpdateThreadMatrixIds(thread.ID, roomId, messageId)
 			} else {
+				ic.matrixRequired <- struct{}{}
 				break
 			}
 		}
 		mails := ic.dbHandler.GetMatrixReadyMails()
 		for _, mail := range mails {
 			ok, matrixId := ic.matrixHandler.AddReply(
-				ic.config.Matrix.Room, mail.RootMatrixID.String, mail.NameFrom.String, mail.Subject,
-				mail.Timestamp.Time, *mail.Messages.Messages[0].Content, mail.IsFirst,
+				mail.RootMatrixRoomID.String, mail.RootMatrixID.String, mail.NameFrom.String,
+				mail.Subject, mail.Timestamp.Time, *mail.Messages.Messages[0].Content, mail.IsFirst,
 			)
 			if ok {
 				ic.dbHandler.UpdateMailMatrixId(mail.ID, matrixId)

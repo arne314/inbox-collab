@@ -1,12 +1,20 @@
+CREATE TABLE fetcher (
+    id TEXT PRIMARY KEY,
+    uid_last INT NOT NULL DEFAULT 1,
+    uid_validity INT NOT NULL DEFAULT 1
+);
+
 CREATE TABLE thread (
     id BIGSERIAL PRIMARY KEY,
     enabled BOOLEAN,
     last_message TIMESTAMP,
-    matrix_id TEXT
+    matrix_id TEXT,
+    matrix_room_id TEXT
 );
 
 CREATE TABLE mail (
     id BIGSERIAL PRIMARY KEY,
+    fetcher TEXT REFERENCES fetcher(id) ON DELETE SET NULL ON UPDATE CASCADE,
     header_id TEXT UNIQUE NOT NULL,
     header_in_reply_to TEXT,
     header_references TEXT[],
@@ -18,6 +26,7 @@ CREATE TABLE mail (
     body TEXT,
     messages JSONB,
     last_message_extraction TIMESTAMP,
+    sorted BOOLEAN NOT NULL DEFAULT FALSE,
     reply_to BIGINT REFERENCES mail(id) ON DELETE SET NULL,
     thread BIGINT REFERENCES thread(id) ON DELETE SET NULL,
     matrix_id TEXT
@@ -25,10 +34,4 @@ CREATE TABLE mail (
 
 ALTER TABLE thread ADD COLUMN first_mail BIGINT REFERENCES mail(id) ON DELETE SET NULL;
 ALTER TABLE thread ADD COLUMN last_mail BIGINT REFERENCES mail(id) ON DELETE SET NULL;
-
-CREATE TABLE fetcher (
-    id TEXT PRIMARY KEY,
-    uid_last INT NOT NULL DEFAULT 1,
-    uid_validity INT NOT NULL DEFAULT 1
-);
 

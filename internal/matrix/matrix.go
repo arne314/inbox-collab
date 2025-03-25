@@ -2,9 +2,12 @@ package matrix
 
 import (
 	"fmt"
+	"regexp"
 	"strings"
 	"sync"
 	"time"
+
+	log "github.com/sirupsen/logrus"
 
 	config "github.com/arne314/inbox-collab/internal/config"
 	_ "github.com/mattn/go-sqlite3"
@@ -12,12 +15,14 @@ import (
 
 type MatrixHandler struct {
 	client *MatrixClient
+	config *config.MatrixConfig
 }
 
 func (mh *MatrixHandler) Setup(cfg *config.Config, wg *sync.WaitGroup) {
 	defer wg.Done()
 	mh.client = &MatrixClient{}
 	mh.client.Login(cfg)
+	mh.config = cfg.Matrix
 }
 
 func (mh *MatrixHandler) Run() {
@@ -43,10 +48,43 @@ func formatTime(timestamp time.Time) string {
 	return formatTime
 }
 
-func (mh *MatrixHandler) CreateThread(roomId string, author string, subject string) (bool, string) {
+func (mh *MatrixHandler) matchRoomsRegexps(regexps map[*regexp.Regexp]string, s string) string {
+	for regex, room := range regexps {
+		if regex.MatchString(s) {
+			log.Infof("Using matrix room %v for: %v", room, s)
+			return room
+		}
+	}
+	return ""
+}
+
+func (mh *MatrixHandler) determineMatrixRoom(
+	fetcher string, addrFrom string, addrTo []string,
+) string {
+	// check criteria in order: to > fetcher > from
+	for _, addr := range addrTo {
+		if room := mh.matchRoomsRegexps(mh.config.RoomsAddrToRegex, addr); room != "" {
+			return room
+		}
+	}
+	if room := mh.matchRoomsRegexps(mh.config.RoomsMailboxRegex, fetcher); room != "" {
+		return room
+	}
+	if room := mh.matchRoomsRegexps(mh.config.RoomsAddrFromRegex, addrFrom); room != "" {
+		return room
+	}
+	log.Infof("Using default matrix room for: to=%v from=%v mailbox=%v", addrTo, addrFrom, fetcher)
+	return mh.config.DefaultRoom
+}
+
+func (mh *MatrixHandler) CreateThread(
+	fetcher string, addrFrom string, addrTo []string, author string, subject string,
+) (bool, string, string) {
 	textMessage := fmt.Sprintf("%s: %s", author, subject)
 	htmlMessage := fmt.Sprintf("<strong>%s</strong>: %s", author, subject)
-	return mh.client.SendRoomMessage(roomId, textMessage, htmlMessage)
+	roomId := mh.determineMatrixRoom(fetcher, addrFrom, addrTo)
+	ok, messageId := mh.client.SendRoomMessage(roomId, textMessage, htmlMessage)
+	return ok, roomId, messageId
 }
 
 func (mh *MatrixHandler) AddReply(

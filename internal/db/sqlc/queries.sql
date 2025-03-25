@@ -6,8 +6,8 @@ SELECT * FROM mail
 WHERE id = $1 LIMIT 1;
 
 -- name: AddMail :many
-INSERT INTO mail (header_id, header_in_reply_to, header_references, timestamp, name_from, addr_from, addr_to, subject, body)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+INSERT INTO mail (fetcher, header_id, header_in_reply_to, header_references, timestamp, name_from, addr_from, addr_to, subject, body)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
 ON CONFLICT (header_id) DO NOTHING
 RETURNING *;
 
@@ -17,7 +17,7 @@ WHERE messages ->> 'messages' IS NULL;
 
 -- name: GetMailsRequiringSorting :many
 SELECT * FROM mail
-WHERE thread IS NULL AND messages ->> 'messages' IS NOT NULL
+WHERE NOT sorted AND messages ->> 'messages' IS NOT NULL
 ORDER BY timestamp;
 
 -- name: GetReferencedThreadParent :many
@@ -33,7 +33,12 @@ WHERE id = $1;
 
 -- name: UpdateMailSorting :exec
 UPDATE mail
-SET reply_to = $3, thread = $2
+SET reply_to = $3, thread = $2, sorted = TRUE
+WHERE id = $1;
+
+-- name: UpdateMailMarkSorted :exec
+UPDATE mail
+SET sorted = TRUE
 WHERE id = $1;
 
 -- name: AutoUpdateMailReplyTo :execrows
@@ -71,20 +76,22 @@ SET uid_last = $2, uid_validity = $3
 WHERE id = $1;
 
 -- name: GetMatrixReadyThreads :many
-SELECT thread.id, mail.subject, mail.name_from FROM thread
+SELECT thread.id, mail.fetcher, mail.addr_from, mail.addr_to, mail.subject, mail.name_from FROM thread
 JOIN mail ON thread.first_mail = mail.id
 WHERE thread.matrix_id IS NULL
 ORDER BY mail.timestamp;
 
 -- name: GetMatrixReadyMails :many
-SELECT mail.*, thread.matrix_id AS root_matrix_id, mail.id = thread.first_mail AS is_first FROM mail
+SELECT mail.*,
+thread.matrix_id AS root_matrix_id, thread.matrix_room_id AS root_matrix_room_id, mail.id = thread.first_mail AS is_first
+FROM mail
 JOIN thread ON mail.thread = thread.id
 WHERE mail.matrix_id IS NULL AND thread.matrix_id IS NOT NULL
 ORDER BY mail.timestamp;
 
--- name: UpdateThreadMatrixId :exec
+-- name: UpdateThreadMatrixIds :exec
 UPDATE thread
-SET matrix_id = $2
+SET matrix_id = $3, matrix_room_id = $2
 WHERE id = $1;
 
 -- name: UpdateMailMatrixId :exec

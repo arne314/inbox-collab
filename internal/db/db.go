@@ -15,6 +15,7 @@ import (
 type DbHandler struct {
 	pool    *pgxpool.Pool
 	queries *db.Queries
+	config  *config.Config
 }
 
 func (dh *DbHandler) Setup(cfg *config.Config) {
@@ -26,6 +27,7 @@ func (dh *DbHandler) Setup(cfg *config.Config) {
 	}
 	dh.pool = pool
 	dh.queries = db.New(pool)
+	dh.config = cfg
 	mailCount, err := dh.queries.MailCount(ctx)
 	if err != nil {
 		log.Errorf("Error counting mails: %v", err)
@@ -42,6 +44,7 @@ func (dh *DbHandler) AddMails(mails []*db.Mail) int {
 	count := 0
 	for _, mail := range mails {
 		inserted, err := dh.queries.AddMail(context.Background(), db.AddMailParams{
+			Fetcher:          mail.Fetcher,
 			HeaderID:         mail.HeaderID,
 			HeaderInReplyTo:  mail.HeaderInReplyTo,
 			HeaderReferences: mail.HeaderReferences,
@@ -107,7 +110,7 @@ func (dh *DbHandler) UpdateExtractedMessages(mail *db.Mail) {
 	log.Infof("Updated extracted messages of mail %v", mail.ID)
 }
 
-func (dh *DbHandler) AutoUpdateMailReplyTo() {
+func (dh *DbHandler) AutoUpdateMailSorting() {
 	count, err := dh.queries.AutoUpdateMailReplyTo(context.Background())
 	if err != nil {
 		log.Errorf("Error auto updating reply_to columns: %v", err)
@@ -171,6 +174,13 @@ func (dh *DbHandler) AddMailToThread(mail *db.Mail, threadId int64) {
 	log.Infof("Added mail %v to thread %v", mail.ID, threadId)
 }
 
+func (dh *DbHandler) MarkMailAsSorted(mail *db.Mail) {
+	err := dh.queries.UpdateMailMarkSorted(context.Background(), mail.ID)
+	if err != nil {
+		log.Errorf("Error marking mail %v as sorted: %v", mail.ID, err)
+	}
+}
+
 func (dh *DbHandler) GetMailFetcherState(id string) (uint32, uint32) {
 	ctx := context.Background()
 	state, err := dh.queries.GetFetcherState(ctx, id)
@@ -204,6 +214,7 @@ func (dh *DbHandler) GetMatrixReadyThreads() []*db.GetMatrixReadyThreadsRow {
 		log.Errorf("Error getting matrix ready threads from db: %v", err)
 		return []*db.GetMatrixReadyThreadsRow{}
 	}
+	log.Infof("Fetched %v threads ready to be associated with a matrix message", len(threads))
 	return threads
 }
 
@@ -213,13 +224,15 @@ func (dh *DbHandler) GetMatrixReadyMails() []*db.GetMatrixReadyMailsRow {
 		log.Errorf("Error getting matrix ready mails from db: %v", err)
 		return []*db.GetMatrixReadyMailsRow{}
 	}
+	log.Infof("Fetched %v mails ready to be associated with a matrix message", len(mails))
 	return mails
 }
 
-func (dh *DbHandler) UpdateThreadMatrixId(threadId int64, matrixId string) {
-	err := dh.queries.UpdateThreadMatrixId(context.Background(), db.UpdateThreadMatrixIdParams{
-		ID:       threadId,
-		MatrixID: pgtype.Text{String: matrixId, Valid: true},
+func (dh *DbHandler) UpdateThreadMatrixIds(threadId int64, roomId string, messageId string) {
+	err := dh.queries.UpdateThreadMatrixIds(context.Background(), db.UpdateThreadMatrixIdsParams{
+		ID:           threadId,
+		MatrixID:     pgtype.Text{String: messageId, Valid: true},
+		MatrixRoomID: pgtype.Text{String: roomId, Valid: true},
 	})
 	if err != nil {
 		log.Errorf("Error updating thread matrix id: %v", err)

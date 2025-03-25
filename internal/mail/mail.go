@@ -35,7 +35,7 @@ func (mh *MailHandler) Setup(
 			if globalCfg.ListMailboxes {
 				fetcherName = name
 			} else {
-				fetcherName = fmt.Sprintf("%s_%s", name, mailbox)
+				fetcherName = fmt.Sprintf("%s:%s", name, mailbox)
 			}
 			fetcher := NewMailFetcher(
 				fetcherName, mailbox, cfg,

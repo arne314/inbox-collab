@@ -14,6 +14,7 @@ import (
 )
 
 type Mail struct {
+	Fetcher     string
 	NameFrom    string
 	AddrFrom    string
 	Subject     string

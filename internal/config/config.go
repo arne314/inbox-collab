@@ -4,6 +4,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"regexp"
 	"strings"
 
 	"github.com/joho/godotenv"
@@ -24,7 +25,15 @@ type MailConfig struct {
 }
 
 type MatrixConfig struct {
-	Room string `toml:"room"`
+	DefaultRoom        string            `toml:"default_room"`
+	RoomsAddrFrom      map[string]string `toml:"rooms_addr_from"`
+	RoomsAddrTo        map[string]string `toml:"rooms_addr_to"`
+	RoomsMailbox       map[string]string `toml:"rooms_mailbox"`
+	HeadBlacklist      []string          `toml:"head_blacklist"`
+	RoomsAddrFromRegex map[*regexp.Regexp]string
+	RoomsAddrToRegex   map[*regexp.Regexp]string
+	RoomsMailboxRegex  map[*regexp.Regexp]string
+	HeadBlacklistRegex []*regexp.Regexp
 
 	HomeServer    string
 	Username      string
@@ -37,8 +46,8 @@ type Config struct {
 	LLM    *LLMConfig             `toml:"llm"`
 	Matrix *MatrixConfig          `toml:"matrix"`
 
-	DatabaseUrl         string
-	ListMailboxes       bool
+	DatabaseUrl   string
+	ListMailboxes bool
 }
 
 func (c *Config) getenv(name string) string {
@@ -91,4 +100,31 @@ func (c *Config) Load() {
 			mailConfig.Mailboxes = []string{"INBOX"}
 		}
 	}
+
+	// validation
+	c.Matrix.HeadBlacklistRegex = make([]*regexp.Regexp, len(c.Matrix.HeadBlacklist))
+	for i, addr := range c.Matrix.HeadBlacklist {
+		regex, err := regexp.CompilePOSIX(addr)
+		if err != nil {
+			log.Fatalf("Head blacklist config \"%s\" invalid: %v", addr, err)
+		} else {
+			c.Matrix.HeadBlacklistRegex[i] = regex
+		}
+	}
+	validateRoomsRegex := func(configs map[string]string, regexps map[*regexp.Regexp]string) {
+		for addr, room := range configs {
+			regex, err := regexp.CompilePOSIX(addr)
+			if err != nil {
+				log.Fatalf("Matrix room config \"%s\" invalid: %v", addr, err)
+			} else {
+				regexps[regex] = room
+			}
+		}
+	}
+	c.Matrix.RoomsAddrFromRegex = make(map[*regexp.Regexp]string)
+	c.Matrix.RoomsAddrToRegex = make(map[*regexp.Regexp]string)
+	c.Matrix.RoomsMailboxRegex = make(map[*regexp.Regexp]string)
+	validateRoomsRegex(c.Matrix.RoomsAddrFrom, c.Matrix.RoomsAddrFromRegex)
+	validateRoomsRegex(c.Matrix.RoomsAddrTo, c.Matrix.RoomsAddrToRegex)
+	validateRoomsRegex(c.Matrix.RoomsMailbox, c.Matrix.RoomsMailboxRegex)
 }
