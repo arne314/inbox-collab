@@ -29,6 +29,17 @@ func (mh *MatrixHandler) Run() {
 	mh.client.Run()
 }
 
+func (mh *MatrixHandler) WaitForRoomJoins() {
+	for {
+		ok, missing := mh.client.ValidateRooms()
+		if ok {
+			break
+		}
+		log.Warnf("Not a member of configured room %v - please invite, retrying in 20s...", missing)
+		time.Sleep(time.Second * 20)
+	}
+}
+
 func formatThreadTitle(author string, subject string) (string, string) {
 	textMessage := fmt.Sprintf("%s: %s", author, subject)
 	htmlMessage := fmt.Sprintf("<strong>%s</strong>: %s", author, subject)

@@ -205,6 +205,7 @@ func (ic *InboxCollab) sortMails() {
 
 func (ic *InboxCollab) notifyMatrix() {
 	ic.dbHandler.AddAllRooms()
+	ic.matrixHandler.WaitForRoomJoins()
 	ic.matrixRequired <- struct{}{} // initial update
 	for range ic.matrixRequired {
 		// post new threads
