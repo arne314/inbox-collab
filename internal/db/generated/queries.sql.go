@@ -103,8 +103,8 @@ func (q *Queries) AddRoom(ctx context.Context, id string) error {
 }
 
 const addThread = `-- name: AddThread :one
-INSERT INTO thread (enabled, last_message, first_mail, last_mail)
-VALUES (true, CURRENT_TIMESTAMP, $1, $1)
+INSERT INTO thread (last_message, first_mail, last_mail)
+VALUES (CURRENT_TIMESTAMP, $1, $1)
 RETURNING id, enabled, last_message, matrix_id, matrix_room_id, first_mail, last_mail
 `
 
@@ -406,7 +406,7 @@ ORDER BY thread.last_message DESC
 
 type GetOverviewThreadsRow struct {
 	ID           int64
-	Enabled      pgtype.Bool
+	Enabled      bool
 	LastMessage  pgtype.Timestamp
 	MatrixID     pgtype.Text
 	MatrixRoomID pgtype.Text
@@ -615,9 +615,29 @@ func (q *Queries) UpdateRoomOverviewMessage(ctx context.Context, arg UpdateRoomO
 	return err
 }
 
+const updateThreadEnabled = `-- name: UpdateThreadEnabled :execrows
+UPDATE thread
+SET enabled = $3
+WHERE matrix_id = $1 AND matrix_room_id = $2 AND enabled != $3
+`
+
+type UpdateThreadEnabledParams struct {
+	MatrixID     pgtype.Text
+	MatrixRoomID pgtype.Text
+	Enabled      bool
+}
+
+func (q *Queries) UpdateThreadEnabled(ctx context.Context, arg UpdateThreadEnabledParams) (int64, error) {
+	result, err := q.db.Exec(ctx, updateThreadEnabled, arg.MatrixID, arg.MatrixRoomID, arg.Enabled)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const updateThreadLastMail = `-- name: UpdateThreadLastMail :exec
 UPDATE thread
-SET enabled = true, last_message = GREATEST(last_message, $3), last_mail = $2
+SET enabled = TRUE, last_message = GREATEST(last_message, $3), last_mail = $2
 WHERE id = $1
 `
 
