@@ -18,10 +18,10 @@ type MatrixHandler struct {
 	config *config.MatrixConfig
 }
 
-func (mh *MatrixHandler) Setup(cfg *config.Config, wg *sync.WaitGroup) {
+func (mh *MatrixHandler) Setup(cfg *config.Config, actions Actions, wg *sync.WaitGroup) {
 	defer wg.Done()
 	mh.client = &MatrixClient{}
-	mh.client.Login(cfg)
+	mh.client.Login(cfg, actions)
 	mh.config = cfg.Matrix
 }
 

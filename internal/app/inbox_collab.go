@@ -72,7 +72,7 @@ func (ic *InboxCollab) Setup(
 		getState:  dbHandler.GetMailFetcherState,
 		saveState: dbHandler.UpdateMailFetcherState,
 	})
-	go matrixHandler.Setup(config, waitGroup)
+	go matrixHandler.Setup(config, ic, waitGroup)
 	waitGroup.Wait()
 }
 
@@ -201,6 +201,22 @@ func (ic *InboxCollab) sortMails() {
 		ic.matrixRequired <- struct{}{}
 		log.Infof("Done sorting %v mails", len(mails))
 	}
+}
+
+func (ic *InboxCollab) OpenThread(roomId string, threadId string) bool {
+	ok := ic.dbHandler.UpdateThreadEnabled(roomId, threadId, true)
+	if ok {
+		ic.matrixRequired <- struct{}{}
+	}
+	return ok
+}
+
+func (ic *InboxCollab) CloseThread(roomId string, threadId string) bool {
+	ok := ic.dbHandler.UpdateThreadEnabled(roomId, threadId, false)
+	if ok {
+		ic.matrixRequired <- struct{}{}
+	}
+	return ok
 }
 
 func (ic *InboxCollab) notifyMatrix() {

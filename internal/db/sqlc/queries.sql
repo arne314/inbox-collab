@@ -48,8 +48,8 @@ FROM mail m
 WHERE mail.thread IS NULL AND mail.header_in_reply_to = m.header_id;
 
 -- name: AddThread :one
-INSERT INTO thread (enabled, last_message, first_mail, last_mail)
-VALUES (true, CURRENT_TIMESTAMP, $1, $1)
+INSERT INTO thread (last_message, first_mail, last_mail)
+VALUES (CURRENT_TIMESTAMP, $1, $1)
 RETURNING *;
 
 -- name: UpdateThreadLastMessage :exec
@@ -59,8 +59,13 @@ WHERE id = $1;
 
 -- name: UpdateThreadLastMail :exec
 UPDATE thread
-SET enabled = true, last_message = GREATEST(last_message, $3), last_mail = $2
+SET enabled = TRUE, last_message = GREATEST(last_message, $3), last_mail = $2
 WHERE id = $1;
+
+-- name: UpdateThreadEnabled :execrows
+UPDATE thread
+SET enabled = $3
+WHERE matrix_id = $1 AND matrix_room_id = $2 AND enabled != $3;
 
 -- name: AddFetcher :exec
 INSERT INTO fetcher (id)

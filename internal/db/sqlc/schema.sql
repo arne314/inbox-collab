@@ -14,7 +14,7 @@ CREATE TABLE room (
 
 CREATE TABLE thread (
     id BIGSERIAL PRIMARY KEY,
-    enabled BOOLEAN,
+    enabled BOOLEAN NOT NULL DEFAULT TRUE,
     last_message TIMESTAMP,
     matrix_id TEXT,
     matrix_room_id TEXT REFERENCES room(id) ON DELETE SET NULL ON UPDATE CASCADE

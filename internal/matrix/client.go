@@ -22,6 +22,7 @@ type MatrixClient struct {
 	cryptoHelper       *cryptohelper.CryptoHelper
 	verificationHelper *verificationhelper.VerificationHelper
 	autoVerifySession  bool
+	commandHandler     *CommandHandler
 }
 
 // implement mautrix auth callbacks
@@ -75,14 +76,15 @@ func (mc *MatrixClient) ShowSAS(
 	}()
 }
 
-func (mc *MatrixClient) Login(cfg *config.Config) {
+func (mc *MatrixClient) Login(cfg *config.Config, actions Actions) {
 	mc.config = cfg.Matrix
 	client, err := mautrix.NewClient(mc.config.HomeServer, "", "")
 	client.DefaultHTTPRetries = 3
-	mc.client = client
 	if err != nil {
 		log.Fatalf("Invalid matrix config: %v", err)
 	}
+	mc.client = client
+	mc.commandHandler = &CommandHandler{actions: actions, client: mc}
 	syncer := client.Syncer.(*mautrix.DefaultSyncer)
 
 	// listen for messages
@@ -91,6 +93,7 @@ func (mc *MatrixClient) Login(cfg *config.Config) {
 			log.Infof("Received message\nSender: %s\nType: %s\nID: %s\nBody: %s\n",
 				sender, evt.Type.String(), evt.ID.String(), evt.Content.AsMessage().Body,
 			)
+			mc.commandHandler.ProcessMessage(evt)
 		}
 	})
 
@@ -275,6 +278,15 @@ func (mc *MatrixClient) EditRoomMessage(
 		return false, ""
 	}
 	return true, messageId
+}
+
+func (mc *MatrixClient) ReactToMessage(roomId string, messageId string, reaction string) {
+	_, err := mc.client.SendReaction(
+		context.Background(), id.RoomID(roomId), id.EventID(messageId), reaction,
+	)
+	if err != nil {
+		log.Errorf("Error reacting to message: %v", err)
+	}
 }
 
 func (mc *MatrixClient) Run() {

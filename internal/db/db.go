@@ -249,6 +249,25 @@ func (dh *DbHandler) UpdateMailMatrixId(mailId int64, matrixId string) {
 	}
 }
 
+func (dh *DbHandler) UpdateThreadEnabled(roomId string, messageId string, enabled bool) bool {
+	count, err := dh.queries.UpdateThreadEnabled(
+		context.Background(),
+		db.UpdateThreadEnabledParams{
+			Enabled:      enabled,
+			MatrixID:     pgtype.Text{String: messageId, Valid: true},
+			MatrixRoomID: pgtype.Text{String: roomId, Valid: true},
+		},
+	)
+	if err != nil {
+		log.Errorf(
+			"Error enabled column of thread in room %v with message %v to %v: %v",
+			roomId, messageId, enabled, err,
+		)
+		return false
+	}
+	return count == 1
+}
+
 func (dh *DbHandler) AddAllRooms() {
 	ctx := context.Background()
 	for _, room := range dh.config.Matrix.AllRooms {
