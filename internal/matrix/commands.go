@@ -2,8 +2,8 @@ package matrix
 
 import (
 	"regexp"
+	"strings"
 
-	_ "github.com/mattn/go-sqlite3"
 	log "github.com/sirupsen/logrus"
 	"maunium.net/go/mautrix/event"
 )
@@ -105,7 +105,7 @@ func (ch *CommandHandler) ProcessMessage(evt *event.Event) {
 	if parsed == nil {
 		return
 	}
-	cmd := parsed[1]
+	cmd := strings.ToLower(parsed[1])
 	for _, valid := range commands {
 		if valid == cmd {
 			c := NewCommand(cmd, evt, ch.client, ch.actions)
