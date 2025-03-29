@@ -3,7 +3,8 @@ SELECT COUNT(*) FROM mail;
 
 -- name: GetMail :one
 SELECT * FROM mail
-WHERE id = $1 LIMIT 1;
+LEFT JOIN thread ON thread.id = mail.thread
+WHERE mail.id = $1 LIMIT 1;
 
 -- name: AddMail :many
 INSERT INTO mail (fetcher, header_id, header_in_reply_to, header_references, timestamp, name_from, addr_from, addr_to, subject, body)
@@ -22,7 +23,8 @@ ORDER BY timestamp;
 
 -- name: GetReferencedThreadParent :many
 SELECT * FROM mail
-WHERE thread IS NOT NULL AND header_id = ANY($1::text[])
+JOIN thread ON thread.id = mail.thread
+WHERE header_id = ANY($1::text[]) AND NOT thread.force_close
 ORDER BY timestamp DESC
 LIMIT 1;
 
@@ -64,8 +66,8 @@ WHERE id = $1;
 
 -- name: UpdateThreadEnabled :execrows
 UPDATE thread
-SET enabled = $3
-WHERE matrix_id = $1 AND matrix_room_id = $2 AND enabled != $3;
+SET enabled = $3, force_close = COALESCE($4, force_close)
+WHERE matrix_id = $1 AND matrix_room_id = $2 AND (enabled != $3 OR force_close != COALESCE($4, force_close));
 
 -- name: AddFetcher :exec
 INSERT INTO fetcher (id)

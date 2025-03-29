@@ -11,6 +11,7 @@ import (
 type Actions interface {
 	OpenThread(roomId string, threadId string) bool
 	CloseThread(roomId string, threadId string) bool
+	ForceCloseThread(roomId string, threadId string) bool
 }
 
 type CommandState int
@@ -23,7 +24,7 @@ const (
 )
 
 var (
-	commands              []string       = []string{"open", "close"}
+	commands              []string       = []string{"open", "close", "forceclose"}
 	commandRegex          *regexp.Regexp = regexp.MustCompile(`^!\s?([a-zA-Z]+)`)
 	CommandStateReactions []string       = []string{"👀", "⏳", "✅", "❌"}
 )
@@ -66,6 +67,12 @@ func (c *Command) Run() {
 			ok = false
 		} else {
 			ok = c.actions.CloseThread(c.roomId, threadId)
+		}
+	case "forceclose":
+		if threadId == "" {
+			ok = false
+		} else {
+			ok = c.actions.ForceCloseThread(c.roomId, threadId)
 		}
 	default:
 		ok = false

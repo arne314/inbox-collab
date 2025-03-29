@@ -66,7 +66,7 @@ func (dh *DbHandler) AddMails(mails []*db.Mail) int {
 	return count
 }
 
-func (dh *DbHandler) GetMailById(id int64) *db.Mail {
+func (dh *DbHandler) GetMailById(id int64) *db.GetMailRow {
 	mail, err := dh.queries.GetMail(context.Background(), id)
 	if err != nil {
 		log.Errorf("Failed to fetch mail by id %v: %v", id, err)
@@ -119,7 +119,7 @@ func (dh *DbHandler) AutoUpdateMailSorting() {
 	log.Infof("Auto updated %v mail reply_to columns", count)
 }
 
-func (dh *DbHandler) GetReferencedThreadParent(mail *db.Mail) *db.Mail {
+func (dh *DbHandler) GetReferencedThreadParent(mail *db.Mail) *db.GetReferencedThreadParentRow {
 	rows, err := dh.queries.GetReferencedThreadParent(context.Background(), mail.HeaderReferences)
 	if err != nil {
 		log.Errorf("Error getting referenced thread parent for mail %v: %v", mail.ID, err)
@@ -249,15 +249,19 @@ func (dh *DbHandler) UpdateMailMatrixId(mailId int64, matrixId string) {
 	}
 }
 
-func (dh *DbHandler) UpdateThreadEnabled(roomId string, messageId string, enabled bool) bool {
-	count, err := dh.queries.UpdateThreadEnabled(
-		context.Background(),
-		db.UpdateThreadEnabledParams{
-			Enabled:      enabled,
-			MatrixID:     pgtype.Text{String: messageId, Valid: true},
-			MatrixRoomID: pgtype.Text{String: roomId, Valid: true},
-		},
-	)
+func (dh *DbHandler) UpdateThreadEnabled(
+	roomId string, messageId string, enabled bool, forceClose bool,
+) bool {
+	params := db.UpdateThreadEnabledParams{
+		Enabled:      enabled,
+		MatrixID:     pgtype.Text{String: messageId, Valid: true},
+		MatrixRoomID: pgtype.Text{String: roomId, Valid: true},
+
+		// ignore in case of normal thread close
+		ForceClose: pgtype.Bool{Bool: forceClose, Valid: enabled || forceClose},
+	}
+
+	count, err := dh.queries.UpdateThreadEnabled(context.Background(), params)
 	if err != nil {
 		log.Errorf(
 			"Error enabled column of thread in room %v with message %v to %v: %v",

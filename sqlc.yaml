@@ -21,3 +21,6 @@ sql:
               pointer: true
               package: "db"
               import: "github.com/arne314/inbox-collab/internal/db/sqlc"
+          - column: "thread.force_close"
+            go_type:
+              type: "pgtype.Bool"

@@ -170,8 +170,9 @@ func (ic *InboxCollab) sortMails() {
 		for _, mail := range mails {
 			var threadId int64
 			if mail.ReplyTo.Valid {
-				if t := ic.dbHandler.GetMailById(mail.ReplyTo.Int64).Thread; t.Valid {
-					threadId = t.Int64
+				if m := ic.dbHandler.GetMailById(mail.ReplyTo.Int64); m.Thread.Valid &&
+					!m.ForceClose.Bool {
+					threadId = m.Thread.Int64
 				}
 			}
 			if threadId == 0 {
@@ -204,7 +205,7 @@ func (ic *InboxCollab) sortMails() {
 }
 
 func (ic *InboxCollab) OpenThread(roomId string, threadId string) bool {
-	ok := ic.dbHandler.UpdateThreadEnabled(roomId, threadId, true)
+	ok := ic.dbHandler.UpdateThreadEnabled(roomId, threadId, true, false)
 	if ok {
 		ic.matrixRequired <- struct{}{}
 	}
@@ -212,7 +213,16 @@ func (ic *InboxCollab) OpenThread(roomId string, threadId string) bool {
 }
 
 func (ic *InboxCollab) CloseThread(roomId string, threadId string) bool {
-	ok := ic.dbHandler.UpdateThreadEnabled(roomId, threadId, false)
+	// force close boolean is ignored internally
+	ok := ic.dbHandler.UpdateThreadEnabled(roomId, threadId, false, false)
+	if ok {
+		ic.matrixRequired <- struct{}{}
+	}
+	return ok
+}
+
+func (ic *InboxCollab) ForceCloseThread(roomId string, threadId string) bool {
+	ok := ic.dbHandler.UpdateThreadEnabled(roomId, threadId, false, true)
 	if ok {
 		ic.matrixRequired <- struct{}{}
 	}
