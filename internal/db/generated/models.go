@@ -46,6 +46,7 @@ type Room struct {
 type Thread struct {
 	ID           int64
 	Enabled      bool
+	ForceClose   pgtype.Bool
 	LastMessage  pgtype.Timestamp
 	MatrixID     pgtype.Text
 	MatrixRoomID pgtype.Text

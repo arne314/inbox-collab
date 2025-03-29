@@ -105,7 +105,7 @@ func (q *Queries) AddRoom(ctx context.Context, id string) error {
 const addThread = `-- name: AddThread :one
 INSERT INTO thread (last_message, first_mail, last_mail)
 VALUES (CURRENT_TIMESTAMP, $1, $1)
-RETURNING id, enabled, last_message, matrix_id, matrix_room_id, first_mail, last_mail
+RETURNING id, enabled, force_close, last_message, matrix_id, matrix_room_id, first_mail, last_mail
 `
 
 func (q *Queries) AddThread(ctx context.Context, firstMail pgtype.Int8) (*Thread, error) {
@@ -114,6 +114,7 @@ func (q *Queries) AddThread(ctx context.Context, firstMail pgtype.Int8) (*Thread
 	err := row.Scan(
 		&i.ID,
 		&i.Enabled,
+		&i.ForceClose,
 		&i.LastMessage,
 		&i.MatrixID,
 		&i.MatrixRoomID,
@@ -164,13 +165,42 @@ func (q *Queries) GetFetcherState(ctx context.Context, id string) ([]*Fetcher, e
 }
 
 const getMail = `-- name: GetMail :one
-SELECT id, fetcher, header_id, header_in_reply_to, header_references, timestamp, name_from, addr_from, addr_to, subject, body, messages, last_message_extraction, sorted, reply_to, thread, matrix_id FROM mail
-WHERE id = $1 LIMIT 1
+SELECT mail.id, fetcher, header_id, header_in_reply_to, header_references, timestamp, name_from, addr_from, addr_to, subject, body, messages, last_message_extraction, sorted, reply_to, thread, mail.matrix_id, thread.id, enabled, force_close, last_message, thread.matrix_id, matrix_room_id, first_mail, last_mail FROM mail
+LEFT JOIN thread ON thread.id = mail.thread
+WHERE mail.id = $1 LIMIT 1
 `
 
-func (q *Queries) GetMail(ctx context.Context, id int64) (*Mail, error) {
+type GetMailRow struct {
+	ID                    int64
+	Fetcher               pgtype.Text
+	HeaderID              string
+	HeaderInReplyTo       pgtype.Text
+	HeaderReferences      []string
+	Timestamp             pgtype.Timestamp
+	NameFrom              pgtype.Text
+	AddrFrom              pgtype.Text
+	AddrTo                []string
+	Subject               string
+	Body                  *pgtype.Text
+	Messages              *db.ExtractedMessages
+	LastMessageExtraction pgtype.Timestamp
+	Sorted                bool
+	ReplyTo               pgtype.Int8
+	Thread                pgtype.Int8
+	MatrixID              pgtype.Text
+	ID_2                  pgtype.Int8
+	Enabled               pgtype.Bool
+	ForceClose            pgtype.Bool
+	LastMessage           pgtype.Timestamp
+	MatrixID_2            pgtype.Text
+	MatrixRoomID          pgtype.Text
+	FirstMail             pgtype.Int8
+	LastMail              pgtype.Int8
+}
+
+func (q *Queries) GetMail(ctx context.Context, id int64) (*GetMailRow, error) {
 	row := q.db.QueryRow(ctx, getMail, id)
-	var i Mail
+	var i GetMailRow
 	err := row.Scan(
 		&i.ID,
 		&i.Fetcher,
@@ -189,6 +219,14 @@ func (q *Queries) GetMail(ctx context.Context, id int64) (*Mail, error) {
 		&i.ReplyTo,
 		&i.Thread,
 		&i.MatrixID,
+		&i.ID_2,
+		&i.Enabled,
+		&i.ForceClose,
+		&i.LastMessage,
+		&i.MatrixID_2,
+		&i.MatrixRoomID,
+		&i.FirstMail,
+		&i.LastMail,
 	)
 	return &i, err
 }
@@ -397,7 +435,7 @@ func (q *Queries) GetMatrixReadyThreads(ctx context.Context) ([]*GetMatrixReadyT
 }
 
 const getOverviewThreads = `-- name: GetOverviewThreads :many
-SELECT thread.id, thread.enabled, thread.last_message, thread.matrix_id, thread.matrix_room_id, thread.first_mail, thread.last_mail, mail.name_from, mail.subject, mail.matrix_id AS message_id
+SELECT thread.id, thread.enabled, thread.force_close, thread.last_message, thread.matrix_id, thread.matrix_room_id, thread.first_mail, thread.last_mail, mail.name_from, mail.subject, mail.matrix_id AS message_id
 FROM thread
 JOIN mail ON mail.id = thread.first_mail
 WHERE thread.enabled AND thread.matrix_room_id = ANY($1::text[]) AND thread.matrix_id IS NOT NULL
@@ -407,6 +445,7 @@ ORDER BY thread.last_message DESC
 type GetOverviewThreadsRow struct {
 	ID           int64
 	Enabled      bool
+	ForceClose   pgtype.Bool
 	LastMessage  pgtype.Timestamp
 	MatrixID     pgtype.Text
 	MatrixRoomID pgtype.Text
@@ -429,6 +468,7 @@ func (q *Queries) GetOverviewThreads(ctx context.Context, dollar_1 []string) ([]
 		if err := rows.Scan(
 			&i.ID,
 			&i.Enabled,
+			&i.ForceClose,
 			&i.LastMessage,
 			&i.MatrixID,
 			&i.MatrixRoomID,
@@ -449,21 +489,50 @@ func (q *Queries) GetOverviewThreads(ctx context.Context, dollar_1 []string) ([]
 }
 
 const getReferencedThreadParent = `-- name: GetReferencedThreadParent :many
-SELECT id, fetcher, header_id, header_in_reply_to, header_references, timestamp, name_from, addr_from, addr_to, subject, body, messages, last_message_extraction, sorted, reply_to, thread, matrix_id FROM mail
-WHERE thread IS NOT NULL AND header_id = ANY($1::text[])
+SELECT mail.id, fetcher, header_id, header_in_reply_to, header_references, timestamp, name_from, addr_from, addr_to, subject, body, messages, last_message_extraction, sorted, reply_to, thread, mail.matrix_id, thread.id, enabled, force_close, last_message, thread.matrix_id, matrix_room_id, first_mail, last_mail FROM mail
+JOIN thread ON thread.id = mail.thread
+WHERE header_id = ANY($1::text[]) AND NOT thread.force_close
 ORDER BY timestamp DESC
 LIMIT 1
 `
 
-func (q *Queries) GetReferencedThreadParent(ctx context.Context, dollar_1 []string) ([]*Mail, error) {
+type GetReferencedThreadParentRow struct {
+	ID                    int64
+	Fetcher               pgtype.Text
+	HeaderID              string
+	HeaderInReplyTo       pgtype.Text
+	HeaderReferences      []string
+	Timestamp             pgtype.Timestamp
+	NameFrom              pgtype.Text
+	AddrFrom              pgtype.Text
+	AddrTo                []string
+	Subject               string
+	Body                  *pgtype.Text
+	Messages              *db.ExtractedMessages
+	LastMessageExtraction pgtype.Timestamp
+	Sorted                bool
+	ReplyTo               pgtype.Int8
+	Thread                pgtype.Int8
+	MatrixID              pgtype.Text
+	ID_2                  int64
+	Enabled               bool
+	ForceClose            pgtype.Bool
+	LastMessage           pgtype.Timestamp
+	MatrixID_2            pgtype.Text
+	MatrixRoomID          pgtype.Text
+	FirstMail             pgtype.Int8
+	LastMail              pgtype.Int8
+}
+
+func (q *Queries) GetReferencedThreadParent(ctx context.Context, dollar_1 []string) ([]*GetReferencedThreadParentRow, error) {
 	rows, err := q.db.Query(ctx, getReferencedThreadParent, dollar_1)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []*Mail
+	var items []*GetReferencedThreadParentRow
 	for rows.Next() {
-		var i Mail
+		var i GetReferencedThreadParentRow
 		if err := rows.Scan(
 			&i.ID,
 			&i.Fetcher,
@@ -482,6 +551,14 @@ func (q *Queries) GetReferencedThreadParent(ctx context.Context, dollar_1 []stri
 			&i.ReplyTo,
 			&i.Thread,
 			&i.MatrixID,
+			&i.ID_2,
+			&i.Enabled,
+			&i.ForceClose,
+			&i.LastMessage,
+			&i.MatrixID_2,
+			&i.MatrixRoomID,
+			&i.FirstMail,
+			&i.LastMail,
 		); err != nil {
 			return nil, err
 		}
@@ -617,18 +694,24 @@ func (q *Queries) UpdateRoomOverviewMessage(ctx context.Context, arg UpdateRoomO
 
 const updateThreadEnabled = `-- name: UpdateThreadEnabled :execrows
 UPDATE thread
-SET enabled = $3
-WHERE matrix_id = $1 AND matrix_room_id = $2 AND enabled != $3
+SET enabled = $3, force_close = COALESCE($4, force_close)
+WHERE matrix_id = $1 AND matrix_room_id = $2 AND (enabled != $3 OR force_close != COALESCE($4, force_close))
 `
 
 type UpdateThreadEnabledParams struct {
 	MatrixID     pgtype.Text
 	MatrixRoomID pgtype.Text
 	Enabled      bool
+	ForceClose   pgtype.Bool
 }
 
 func (q *Queries) UpdateThreadEnabled(ctx context.Context, arg UpdateThreadEnabledParams) (int64, error) {
-	result, err := q.db.Exec(ctx, updateThreadEnabled, arg.MatrixID, arg.MatrixRoomID, arg.Enabled)
+	result, err := q.db.Exec(ctx, updateThreadEnabled,
+		arg.MatrixID,
+		arg.MatrixRoomID,
+		arg.Enabled,
+		arg.ForceClose,
+	)
 	if err != nil {
 		return 0, err
 	}
