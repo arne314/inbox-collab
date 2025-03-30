@@ -71,7 +71,7 @@ func (c *Config) getRoomByAlias(alias string) string {
 
 func (c *Config) Load() {
 	// load config.toml
-	file, err := os.ReadFile("config.toml")
+	file, err := os.ReadFile("config/config.toml")
 	if err != nil {
 		log.Fatalf("Error reading config.toml: %v", err)
 		return
@@ -98,7 +98,7 @@ func (c *Config) Load() {
 	// load .env
 	err = godotenv.Load()
 	if err != nil {
-		log.Fatalf("Error loading .env file: %v", err)
+		log.Warnf("[Expected in docker] Error loading .env file: %v", err)
 	}
 	c.Matrix.HomeServer = c.getenv("MATRIX_HOMESERVER")
 	c.Matrix.Username = c.getenv("MATRIX_USERNAME")

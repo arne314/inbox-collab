@@ -120,7 +120,7 @@ func (mc *MatrixClient) Login(cfg *config.Config, actions Actions) {
 	})
 
 	// session login
-	cryptoHelper, err := cryptohelper.NewCryptoHelper(client, []byte("meow"), "session.db")
+	cryptoHelper, err := cryptohelper.NewCryptoHelper(client, []byte("meow"), "data/session.db")
 	mc.cryptoHelper = cryptoHelper
 	if err != nil {
 		log.Fatalf("Error setting up cryptohelper: %v", err)

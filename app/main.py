@@ -10,7 +10,7 @@ from pydantic import BaseModel
 from internal import MessageParser
 
 load_dotenv()
-with open("config.toml", "rb") as f:
+with open("config/config.toml", "rb") as f:
     config = tomllib.load(f)
     config["llm"]["openai_api_key"] = os.getenv("OPENAI_API_KEY")
 
