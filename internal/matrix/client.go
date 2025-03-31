@@ -45,6 +45,16 @@ func (mc *MatrixClient) VerificationRequested(
 	}
 }
 
+func (mc *MatrixClient) VerificationReady(
+	ctx context.Context, txnID id.VerificationTransactionID, otherDeviceID id.DeviceID,
+	supportsSAS, supportsScanQRCode bool, qrCode *verificationhelper.QRCode,
+) {
+	log.Infof(
+		"Verification %v has been accepted by both parties (other device id: %v)",
+		txnID, otherDeviceID,
+	)
+}
+
 func (mc *MatrixClient) VerificationCancelled(
 	ctx context.Context, txnID id.VerificationTransactionID,
 	code event.VerificationCancelCode, reason string,
@@ -141,7 +151,7 @@ func (mc *MatrixClient) Login(cfg *config.Config, actions Actions) {
 
 	// session verification
 	verificationHelper := verificationhelper.NewVerificationHelper(
-		client, cryptoHelper.Machine(), nil, mc, false,
+		client, cryptoHelper.Machine(), nil, mc, false, false, true,
 	)
 	err = verificationHelper.Init(context.Background())
 	if err != nil {

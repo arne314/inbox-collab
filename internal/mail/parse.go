@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"github.com/emersion/go-imap/v2/imapclient"
-	"github.com/jhillyerd/enmime"
+	"github.com/jhillyerd/enmime/v2"
 	log "github.com/sirupsen/logrus"
 )
 
