@@ -6,14 +6,18 @@ import (
 	"strings"
 	"time"
 
-	config "github.com/arne314/inbox-collab/internal/config"
 	_ "github.com/mattn/go-sqlite3"
+	// "github.com/rs/zerolog"
 	log "github.com/sirupsen/logrus"
+	"go.mau.fi/util/dbutil"
 	"maunium.net/go/mautrix"
 	"maunium.net/go/mautrix/crypto/cryptohelper"
 	"maunium.net/go/mautrix/crypto/verificationhelper"
 	"maunium.net/go/mautrix/event"
 	"maunium.net/go/mautrix/id"
+	"maunium.net/go/mautrix/sqlstatestore"
+
+	config "github.com/arne314/inbox-collab/internal/config"
 )
 
 type MatrixClient struct {
@@ -60,8 +64,8 @@ func (mc *MatrixClient) VerificationCancelled(
 	code event.VerificationCancelCode, reason string,
 ) {
 	log.Warnf(
-		"Verification cancelled with code %v and transaction id %v for reason: %v",
-		code, txnID, reason,
+		"Verification %v cancelled with code %v for reason: %v",
+		txnID, code, reason,
 	)
 }
 
@@ -90,6 +94,7 @@ func (mc *MatrixClient) Login(cfg *config.Config, actions Actions) {
 	mc.config = cfg.Matrix
 	client, err := mautrix.NewClient(mc.config.HomeServer, "", "")
 	client.DefaultHTTPRetries = 3
+	// client.Log = zerolog.New(os.Stdout).With().Timestamp().Logger()
 	if err != nil {
 		log.Fatalf("Invalid matrix config: %v", err)
 	}
@@ -130,22 +135,50 @@ func (mc *MatrixClient) Login(cfg *config.Config, actions Actions) {
 	})
 
 	// session login
-	cryptoHelper, err := cryptohelper.NewCryptoHelper(client, []byte("meow"), "data/session.db")
-	mc.cryptoHelper = cryptoHelper
+	getDb := func(name string) (*dbutil.Database, error) {
+		db, err := dbutil.NewFromConfig(fmt.Sprintf("inbox-collab-%v", name), dbutil.Config{
+			PoolConfig: dbutil.PoolConfig{
+				Type:         "sqlite3-fk-wal",
+				URI:          fmt.Sprintf("file:data/%v.db?_txlock=immediate", name),
+				MaxOpenConns: 5,
+				MaxIdleConns: 1,
+			},
+		}, dbutil.ZeroLogger(mc.client.Log))
+		if err == nil && db.Owner == "" {
+			db.Owner = "inbox-collab"
+		}
+		return db, err
+	}
+	pickleKey := []byte("meow")
+	sessionDb, err := getDb("session")
+	if err != nil {
+		log.Fatalf("Error creating matrix session database: %v", err)
+	}
+
+	stateStore := sqlstatestore.NewSQLStateStore(sessionDb, dbutil.ZeroLogger(mc.client.Log), false)
+	err = stateStore.Upgrade(context.Background())
+	if err != nil {
+		log.Fatalf("Error upgrading state store db")
+	}
+	mc.client.StateStore = stateStore
+
+	cryptoHelper, err := cryptohelper.NewCryptoHelper(client, pickleKey, sessionDb)
 	if err != nil {
 		log.Fatalf("Error setting up cryptohelper: %v", err)
 	}
+	mc.cryptoHelper = cryptoHelper
 	cryptoHelper.LoginAs = &mautrix.ReqLogin{
 		Type: mautrix.AuthTypePassword,
 		Identifier: mautrix.UserIdentifier{
 			Type: mautrix.IdentifierTypeUser,
 			User: mc.config.Username,
 		},
-		Password: mc.config.Password,
+		Password:                 mc.config.Password,
+		InitialDeviceDisplayName: "inbox-collab",
 	}
 	err = cryptoHelper.Init(context.Background())
 	if err != nil {
-		log.Fatalf("Error setting up cryptohelper: %v", err)
+		log.Fatalf("Error initializing cryptohelper: %v", err)
 	}
 	client.Crypto = cryptoHelper
 
@@ -173,6 +206,10 @@ func (mc *MatrixClient) ValidateRooms() (ok bool, missing string) {
 		for _, j := range joined.JoinedRooms {
 			if j.String() == room {
 				member = true
+				_, err := mc.client.State(context.Background(), j)
+				if err != nil {
+					log.Errorf("Error getting state of joined room: %v", err)
+				}
 				break
 			}
 		}

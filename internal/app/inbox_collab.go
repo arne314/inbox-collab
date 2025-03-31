@@ -231,6 +231,9 @@ func (ic *InboxCollab) ForceCloseThread(roomId string, threadId string) bool {
 
 func (ic *InboxCollab) notifyMatrix() {
 	ic.dbHandler.AddAllRooms()
+	if ic.config.Matrix.VerifySession {
+		return
+	}
 	ic.matrixHandler.WaitForRoomJoins()
 	ic.matrixRequired <- struct{}{} // initial update
 	for range ic.matrixRequired {
