@@ -16,6 +16,7 @@ pkgs.mkShell {
   ];
 
   shellHook = ''
+    uv sync
     source .venv/bin/activate
   '';
 }
