@@ -1,0 +1,13 @@
+.env
+/config
+/data
+__pycache__
+
+.pdm-build
+.venv
+/dist
+
+Dockerfile
+Dockerfile.llm
+compose.yaml
+

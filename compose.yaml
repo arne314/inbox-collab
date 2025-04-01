@@ -1,0 +1,45 @@
+services:
+  app:
+    image: inbox-collab:latest
+    build:
+      context: .
+    restart: always
+    depends_on:
+      db:
+        condition: service_healthy
+      app-llm:
+        condition: service_started
+    env_file:
+      - .env
+    volumes:
+      - data:/app/data
+      - ./config:/app/config:z
+
+  app-llm:
+    image: inbox-collab-llm:latest
+    build:
+      context: .
+      dockerfile: Dockerfile.llm
+    restart: always
+    env_file:
+      - .env
+    volumes:
+      - ./config:/app/config:z
+
+  db:
+    image: postgres:latest
+    restart: always
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 5s
+      retries: 5
+    env_file:
+      - .env
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./internal/db/sqlc/schema.sql:/docker-entrypoint-initdb.d/init.sql:z
+
+volumes:
+  data:
+  pgdata:
+
