@@ -26,7 +26,7 @@ const addMail = `-- name: AddMail :many
 INSERT INTO mail (fetcher, header_id, header_in_reply_to, header_references, timestamp, name_from, addr_from, addr_to, subject, body)
 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
 ON CONFLICT (header_id) DO NOTHING
-RETURNING id, fetcher, header_id, header_in_reply_to, header_references, timestamp, name_from, addr_from, addr_to, subject, body, messages, last_message_extraction, sorted, reply_to, thread, matrix_id
+RETURNING id, fetcher, header_id, header_in_reply_to, header_references, timestamp, name_from, addr_from, addr_to, subject, body, messages, messages_last_update, sorted, reply_to, thread, matrix_id
 `
 
 type AddMailParams struct {
@@ -75,7 +75,7 @@ func (q *Queries) AddMail(ctx context.Context, arg AddMailParams) ([]*Mail, erro
 			&i.Subject,
 			&i.Body,
 			&i.Messages,
-			&i.LastMessageExtraction,
+			&i.MessagesLastUpdate,
 			&i.Sorted,
 			&i.ReplyTo,
 			&i.Thread,
@@ -165,37 +165,37 @@ func (q *Queries) GetFetcherState(ctx context.Context, id string) ([]*Fetcher, e
 }
 
 const getMail = `-- name: GetMail :one
-SELECT mail.id, fetcher, header_id, header_in_reply_to, header_references, timestamp, name_from, addr_from, addr_to, subject, body, messages, last_message_extraction, sorted, reply_to, thread, mail.matrix_id, thread.id, enabled, force_close, last_message, thread.matrix_id, matrix_room_id, first_mail, last_mail FROM mail
+SELECT mail.id, fetcher, header_id, header_in_reply_to, header_references, timestamp, name_from, addr_from, addr_to, subject, body, messages, messages_last_update, sorted, reply_to, thread, mail.matrix_id, thread.id, enabled, force_close, last_message, thread.matrix_id, matrix_room_id, first_mail, last_mail FROM mail
 LEFT JOIN thread ON thread.id = mail.thread
 WHERE mail.id = $1 LIMIT 1
 `
 
 type GetMailRow struct {
-	ID                    int64
-	Fetcher               pgtype.Text
-	HeaderID              string
-	HeaderInReplyTo       pgtype.Text
-	HeaderReferences      []string
-	Timestamp             pgtype.Timestamp
-	NameFrom              pgtype.Text
-	AddrFrom              pgtype.Text
-	AddrTo                []string
-	Subject               string
-	Body                  *pgtype.Text
-	Messages              *db.ExtractedMessages
-	LastMessageExtraction pgtype.Timestamp
-	Sorted                bool
-	ReplyTo               pgtype.Int8
-	Thread                pgtype.Int8
-	MatrixID              pgtype.Text
-	ID_2                  pgtype.Int8
-	Enabled               pgtype.Bool
-	ForceClose            pgtype.Bool
-	LastMessage           pgtype.Timestamp
-	MatrixID_2            pgtype.Text
-	MatrixRoomID          pgtype.Text
-	FirstMail             pgtype.Int8
-	LastMail              pgtype.Int8
+	ID                 int64
+	Fetcher            pgtype.Text
+	HeaderID           string
+	HeaderInReplyTo    pgtype.Text
+	HeaderReferences   []string
+	Timestamp          pgtype.Timestamp
+	NameFrom           pgtype.Text
+	AddrFrom           pgtype.Text
+	AddrTo             []string
+	Subject            string
+	Body               *pgtype.Text
+	Messages           *db.ExtractedMessages
+	MessagesLastUpdate pgtype.Timestamp
+	Sorted             bool
+	ReplyTo            pgtype.Int8
+	Thread             pgtype.Int8
+	MatrixID           pgtype.Text
+	ID_2               pgtype.Int8
+	Enabled            pgtype.Bool
+	ForceClose         pgtype.Bool
+	LastMessage        pgtype.Timestamp
+	MatrixID_2         pgtype.Text
+	MatrixRoomID       pgtype.Text
+	FirstMail          pgtype.Int8
+	LastMail           pgtype.Int8
 }
 
 func (q *Queries) GetMail(ctx context.Context, id int64) (*GetMailRow, error) {
@@ -214,7 +214,7 @@ func (q *Queries) GetMail(ctx context.Context, id int64) (*GetMailRow, error) {
 		&i.Subject,
 		&i.Body,
 		&i.Messages,
-		&i.LastMessageExtraction,
+		&i.MessagesLastUpdate,
 		&i.Sorted,
 		&i.ReplyTo,
 		&i.Thread,
@@ -232,7 +232,7 @@ func (q *Queries) GetMail(ctx context.Context, id int64) (*GetMailRow, error) {
 }
 
 const getMailsRequiringMessageExtraction = `-- name: GetMailsRequiringMessageExtraction :many
-SELECT id, fetcher, header_id, header_in_reply_to, header_references, timestamp, name_from, addr_from, addr_to, subject, body, messages, last_message_extraction, sorted, reply_to, thread, matrix_id FROM mail
+SELECT id, fetcher, header_id, header_in_reply_to, header_references, timestamp, name_from, addr_from, addr_to, subject, body, messages, messages_last_update, sorted, reply_to, thread, matrix_id FROM mail
 WHERE messages ->> 'messages' IS NULL
 `
 
@@ -258,7 +258,7 @@ func (q *Queries) GetMailsRequiringMessageExtraction(ctx context.Context) ([]*Ma
 			&i.Subject,
 			&i.Body,
 			&i.Messages,
-			&i.LastMessageExtraction,
+			&i.MessagesLastUpdate,
 			&i.Sorted,
 			&i.ReplyTo,
 			&i.Thread,
@@ -275,7 +275,7 @@ func (q *Queries) GetMailsRequiringMessageExtraction(ctx context.Context) ([]*Ma
 }
 
 const getMailsRequiringSorting = `-- name: GetMailsRequiringSorting :many
-SELECT id, fetcher, header_id, header_in_reply_to, header_references, timestamp, name_from, addr_from, addr_to, subject, body, messages, last_message_extraction, sorted, reply_to, thread, matrix_id FROM mail
+SELECT id, fetcher, header_id, header_in_reply_to, header_references, timestamp, name_from, addr_from, addr_to, subject, body, messages, messages_last_update, sorted, reply_to, thread, matrix_id FROM mail
 WHERE NOT sorted AND messages ->> 'messages' IS NOT NULL
 ORDER BY timestamp
 `
@@ -302,7 +302,7 @@ func (q *Queries) GetMailsRequiringSorting(ctx context.Context) ([]*Mail, error)
 			&i.Subject,
 			&i.Body,
 			&i.Messages,
-			&i.LastMessageExtraction,
+			&i.MessagesLastUpdate,
 			&i.Sorted,
 			&i.ReplyTo,
 			&i.Thread,
@@ -319,7 +319,7 @@ func (q *Queries) GetMailsRequiringSorting(ctx context.Context) ([]*Mail, error)
 }
 
 const getMatrixReadyMails = `-- name: GetMatrixReadyMails :many
-SELECT mail.id, mail.fetcher, mail.header_id, mail.header_in_reply_to, mail.header_references, mail.timestamp, mail.name_from, mail.addr_from, mail.addr_to, mail.subject, mail.body, mail.messages, mail.last_message_extraction, mail.sorted, mail.reply_to, mail.thread, mail.matrix_id,
+SELECT mail.id, mail.fetcher, mail.header_id, mail.header_in_reply_to, mail.header_references, mail.timestamp, mail.name_from, mail.addr_from, mail.addr_to, mail.subject, mail.body, mail.messages, mail.messages_last_update, mail.sorted, mail.reply_to, mail.thread, mail.matrix_id,
 thread.matrix_id AS root_matrix_id, thread.matrix_room_id AS root_matrix_room_id, mail.id = thread.first_mail AS is_first
 FROM mail
 JOIN thread ON mail.thread = thread.id
@@ -328,26 +328,26 @@ ORDER BY mail.timestamp
 `
 
 type GetMatrixReadyMailsRow struct {
-	ID                    int64
-	Fetcher               pgtype.Text
-	HeaderID              string
-	HeaderInReplyTo       pgtype.Text
-	HeaderReferences      []string
-	Timestamp             pgtype.Timestamp
-	NameFrom              pgtype.Text
-	AddrFrom              pgtype.Text
-	AddrTo                []string
-	Subject               string
-	Body                  *pgtype.Text
-	Messages              *db.ExtractedMessages
-	LastMessageExtraction pgtype.Timestamp
-	Sorted                bool
-	ReplyTo               pgtype.Int8
-	Thread                pgtype.Int8
-	MatrixID              pgtype.Text
-	RootMatrixID          pgtype.Text
-	RootMatrixRoomID      pgtype.Text
-	IsFirst               bool
+	ID                 int64
+	Fetcher            pgtype.Text
+	HeaderID           string
+	HeaderInReplyTo    pgtype.Text
+	HeaderReferences   []string
+	Timestamp          pgtype.Timestamp
+	NameFrom           pgtype.Text
+	AddrFrom           pgtype.Text
+	AddrTo             []string
+	Subject            string
+	Body               *pgtype.Text
+	Messages           *db.ExtractedMessages
+	MessagesLastUpdate pgtype.Timestamp
+	Sorted             bool
+	ReplyTo            pgtype.Int8
+	Thread             pgtype.Int8
+	MatrixID           pgtype.Text
+	RootMatrixID       pgtype.Text
+	RootMatrixRoomID   pgtype.Text
+	IsFirst            bool
 }
 
 func (q *Queries) GetMatrixReadyMails(ctx context.Context) ([]*GetMatrixReadyMailsRow, error) {
@@ -372,7 +372,7 @@ func (q *Queries) GetMatrixReadyMails(ctx context.Context) ([]*GetMatrixReadyMai
 			&i.Subject,
 			&i.Body,
 			&i.Messages,
-			&i.LastMessageExtraction,
+			&i.MessagesLastUpdate,
 			&i.Sorted,
 			&i.ReplyTo,
 			&i.Thread,
@@ -489,7 +489,7 @@ func (q *Queries) GetOverviewThreads(ctx context.Context, dollar_1 []string) ([]
 }
 
 const getReferencedThreadParent = `-- name: GetReferencedThreadParent :many
-SELECT mail.id, fetcher, header_id, header_in_reply_to, header_references, timestamp, name_from, addr_from, addr_to, subject, body, messages, last_message_extraction, sorted, reply_to, thread, mail.matrix_id, thread.id, enabled, force_close, last_message, thread.matrix_id, matrix_room_id, first_mail, last_mail FROM mail
+SELECT mail.id, fetcher, header_id, header_in_reply_to, header_references, timestamp, name_from, addr_from, addr_to, subject, body, messages, messages_last_update, sorted, reply_to, thread, mail.matrix_id, thread.id, enabled, force_close, last_message, thread.matrix_id, matrix_room_id, first_mail, last_mail FROM mail
 JOIN thread ON thread.id = mail.thread
 WHERE header_id = ANY($1::text[]) AND NOT thread.force_close
 ORDER BY timestamp DESC
@@ -497,31 +497,31 @@ LIMIT 1
 `
 
 type GetReferencedThreadParentRow struct {
-	ID                    int64
-	Fetcher               pgtype.Text
-	HeaderID              string
-	HeaderInReplyTo       pgtype.Text
-	HeaderReferences      []string
-	Timestamp             pgtype.Timestamp
-	NameFrom              pgtype.Text
-	AddrFrom              pgtype.Text
-	AddrTo                []string
-	Subject               string
-	Body                  *pgtype.Text
-	Messages              *db.ExtractedMessages
-	LastMessageExtraction pgtype.Timestamp
-	Sorted                bool
-	ReplyTo               pgtype.Int8
-	Thread                pgtype.Int8
-	MatrixID              pgtype.Text
-	ID_2                  int64
-	Enabled               bool
-	ForceClose            pgtype.Bool
-	LastMessage           pgtype.Timestamp
-	MatrixID_2            pgtype.Text
-	MatrixRoomID          pgtype.Text
-	FirstMail             pgtype.Int8
-	LastMail              pgtype.Int8
+	ID                 int64
+	Fetcher            pgtype.Text
+	HeaderID           string
+	HeaderInReplyTo    pgtype.Text
+	HeaderReferences   []string
+	Timestamp          pgtype.Timestamp
+	NameFrom           pgtype.Text
+	AddrFrom           pgtype.Text
+	AddrTo             []string
+	Subject            string
+	Body               *pgtype.Text
+	Messages           *db.ExtractedMessages
+	MessagesLastUpdate pgtype.Timestamp
+	Sorted             bool
+	ReplyTo            pgtype.Int8
+	Thread             pgtype.Int8
+	MatrixID           pgtype.Text
+	ID_2               int64
+	Enabled            bool
+	ForceClose         pgtype.Bool
+	LastMessage        pgtype.Timestamp
+	MatrixID_2         pgtype.Text
+	MatrixRoomID       pgtype.Text
+	FirstMail          pgtype.Int8
+	LastMail           pgtype.Int8
 }
 
 func (q *Queries) GetReferencedThreadParent(ctx context.Context, dollar_1 []string) ([]*GetReferencedThreadParentRow, error) {
@@ -546,7 +546,7 @@ func (q *Queries) GetReferencedThreadParent(ctx context.Context, dollar_1 []stri
 			&i.Subject,
 			&i.Body,
 			&i.Messages,
-			&i.LastMessageExtraction,
+			&i.MessagesLastUpdate,
 			&i.Sorted,
 			&i.ReplyTo,
 			&i.Thread,
@@ -601,7 +601,7 @@ func (q *Queries) MailCount(ctx context.Context) (int64, error) {
 
 const updateExtractedMessages = `-- name: UpdateExtractedMessages :exec
 UPDATE mail
-SET messages = $2, last_message_extraction = CURRENT_TIMESTAMP
+SET messages = $2, messages_last_update = CURRENT_TIMESTAMP
 WHERE id = $1
 `
 

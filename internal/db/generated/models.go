@@ -16,23 +16,23 @@ type Fetcher struct {
 }
 
 type Mail struct {
-	ID                    int64
-	Fetcher               pgtype.Text
-	HeaderID              string
-	HeaderInReplyTo       pgtype.Text
-	HeaderReferences      []string
-	Timestamp             pgtype.Timestamp
-	NameFrom              pgtype.Text
-	AddrFrom              pgtype.Text
-	AddrTo                []string
-	Subject               string
-	Body                  *pgtype.Text
-	Messages              *db.ExtractedMessages
-	LastMessageExtraction pgtype.Timestamp
-	Sorted                bool
-	ReplyTo               pgtype.Int8
-	Thread                pgtype.Int8
-	MatrixID              pgtype.Text
+	ID                 int64
+	Fetcher            pgtype.Text
+	HeaderID           string
+	HeaderInReplyTo    pgtype.Text
+	HeaderReferences   []string
+	Timestamp          pgtype.Timestamp
+	NameFrom           pgtype.Text
+	AddrFrom           pgtype.Text
+	AddrTo             []string
+	Subject            string
+	Body               *pgtype.Text
+	Messages           *db.ExtractedMessages
+	MessagesLastUpdate pgtype.Timestamp
+	Sorted             bool
+	ReplyTo            pgtype.Int8
+	Thread             pgtype.Int8
+	MatrixID           pgtype.Text
 }
 
 type Room struct {
