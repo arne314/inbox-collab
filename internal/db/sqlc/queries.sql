@@ -30,7 +30,7 @@ LIMIT 1;
 
 -- name: UpdateExtractedMessages :exec
 UPDATE mail
-SET messages = $2, last_message_extraction = CURRENT_TIMESTAMP
+SET messages = $2, messages_last_update = CURRENT_TIMESTAMP
 WHERE id = $1;
 
 -- name: UpdateMailSorting :exec

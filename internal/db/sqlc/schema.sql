@@ -34,7 +34,7 @@ CREATE TABLE mail (
     subject TEXT NOT NULL,
     body TEXT,
     messages JSONB,
-    last_message_extraction TIMESTAMP,
+    messages_last_update TIMESTAMP,
     sorted BOOLEAN NOT NULL DEFAULT FALSE,
     reply_to BIGINT REFERENCES mail(id) ON DELETE SET NULL,
     thread BIGINT REFERENCES thread(id) ON DELETE SET NULL,
