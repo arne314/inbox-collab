@@ -42,8 +42,8 @@ type FetcherStateStorage interface {
 type MailFetcher struct {
 	name          string
 	mailbox       string
-	config        *config.MailConfig
-	globalConfig  *config.Config
+	config        *config.MailSourceConfig
+	globalConfig  *config.MailConfig
 	client        *imapclient.Client
 	idleCommand   *imapclient.IdleCommand
 	isIdle        bool
@@ -62,8 +62,8 @@ type MailFetcher struct {
 func NewMailFetcher(
 	name string,
 	mailbox string,
-	config *config.MailConfig,
-	globalConfig *config.Config,
+	config *config.MailSourceConfig,
+	globalConfig *config.MailConfig,
 	mailHandler *MailHandler,
 	fetchedMails chan []*Mail,
 ) *MailFetcher {
@@ -89,15 +89,13 @@ func (mf *MailFetcher) FetchMessages() []*Mail {
 	mf.RevokeIdle()
 	defer mf.Idle()
 
-	var searchCriteria *imap.SearchCriteria
+	searchCriteria := &imap.SearchCriteria{
+		SentSince: time.Now().AddDate(0, 0, -mf.globalConfig.MaxAge),
+	}
 	if ok, _ := mf.uidsValid(); ok {
 		uid := imap.UIDSet{}
 		uid.AddRange(imap.UID(mf.uidLast+1), 0) // 0 means no upper limit
-		searchCriteria = &imap.SearchCriteria{
-			UID: []imap.UIDSet{uid},
-		}
-	} else {
-		searchCriteria = &imap.SearchCriteria{}
+		searchCriteria.UID = []imap.UIDSet{uid}
 	}
 	searchOptions := &imap.SearchOptions{
 		ReturnAll:   true,

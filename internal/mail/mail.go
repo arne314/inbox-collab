@@ -13,14 +13,14 @@ var mailboxUpdateMutex sync.RWMutex
 
 type MailHandler struct {
 	fetchers          []*MailFetcher
-	config            *config.Config
+	config            *config.MailConfig
 	fetchedMails      chan []*Mail
 	lastMailboxUpdate time.Time
 	StateStorage      FetcherStateStorage
 }
 
 func (mh *MailHandler) Setup(
-	globalCfg *config.Config, wg *sync.WaitGroup,
+	globalCfg *config.MailConfig, wg *sync.WaitGroup,
 	fetchedMails chan []*Mail, stateStorage FetcherStateStorage,
 ) {
 	defer wg.Done()
@@ -29,7 +29,7 @@ func (mh *MailHandler) Setup(
 	mh.fetchedMails = fetchedMails
 	mh.StateStorage = stateStorage
 
-	for name, cfg := range globalCfg.Mail {
+	for name, cfg := range globalCfg.Sources {
 		for _, mailbox := range cfg.Mailboxes {
 			var fetcherName string
 			if globalCfg.ListMailboxes {

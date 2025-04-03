@@ -16,12 +16,18 @@ type LLMConfig struct {
 	ApiUrl string `toml:"python_api"`
 }
 
-type MailConfig struct {
+type MailSourceConfig struct {
 	Hostname  string   `toml:"hostname"`
 	Port      int      `toml:"port"`
 	Mailboxes []string `toml:"mailboxes"`
 	Username  string
 	Password  string
+}
+
+type MailConfig struct {
+	MaxAge        int                          `toml:"max_age"`
+	Sources       map[string]*MailSourceConfig `toml:"sources"`
+	ListMailboxes bool
 }
 
 type MatrixConfig struct {
@@ -46,12 +52,11 @@ type MatrixConfig struct {
 }
 
 type Config struct {
-	Mail   map[string]*MailConfig `toml:"mail"`
-	LLM    *LLMConfig             `toml:"llm"`
-	Matrix *MatrixConfig          `toml:"matrix"`
+	Mail   *MailConfig   `toml:"mail"`
+	Matrix *MatrixConfig `toml:"matrix"`
+	LLM    *LLMConfig    `toml:"llm"`
 
-	DatabaseUrl   string
-	ListMailboxes bool
+	DatabaseUrl string
 }
 
 func (c *Config) getenv(name string) string {
@@ -92,7 +97,7 @@ func (c *Config) Load() {
 	)
 	flag.Parse()
 	c.Matrix.VerifySession = *flagVerifyMatrix
-	c.ListMailboxes = *flagListMailboxes
+	c.Mail.ListMailboxes = *flagListMailboxes
 	log.Infof("Loaded config: %+v", c)
 
 	// load .env
@@ -105,14 +110,14 @@ func (c *Config) Load() {
 	c.Matrix.Password = c.getenv("MATRIX_PASSWORD")
 	c.DatabaseUrl = c.getenv("DATABASE_URL")
 
-	for name, mailConfig := range c.Mail {
-		mailConfig.Username = c.getenv(fmt.Sprintf("MAIL_%s_USERNAME", strings.ToUpper(name)))
-		mailConfig.Password = c.getenv(fmt.Sprintf("MAIL_%s_PASSWORD", strings.ToUpper(name)))
-		if mailConfig.Username == "" || mailConfig.Password == "" {
+	for name, source := range c.Mail.Sources {
+		source.Username = c.getenv(fmt.Sprintf("MAIL_%s_USERNAME", strings.ToUpper(name)))
+		source.Password = c.getenv(fmt.Sprintf("MAIL_%s_PASSWORD", strings.ToUpper(name)))
+		if source.Username == "" || source.Password == "" {
 			log.Fatalf("Incomplete mail credentials provided for %v", name)
 		}
-		if len(mailConfig.Mailboxes) == 0 {
-			mailConfig.Mailboxes = []string{"INBOX"}
+		if len(source.Mailboxes) == 0 {
+			source.Mailboxes = []string{"INBOX"}
 		}
 	}
 

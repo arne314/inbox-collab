@@ -68,7 +68,7 @@ func (ic *InboxCollab) Setup(
 	ic.extractionDone.Store(true)
 
 	waitGroup.Add(2)
-	go mailHandler.Setup(config, waitGroup, ic.fetchedMails, FetcherStateStorageImpl{
+	go mailHandler.Setup(config.Mail, waitGroup, ic.fetchedMails, FetcherStateStorageImpl{
 		getState:  dbHandler.GetMailFetcherState,
 		saveState: dbHandler.UpdateMailFetcherState,
 	})
