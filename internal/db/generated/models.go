@@ -19,14 +19,15 @@ type Mail struct {
 	ID                 int64
 	Fetcher            pgtype.Text
 	HeaderID           string
-	HeaderInReplyTo    pgtype.Text
+	HeaderInReplyTo    string
 	HeaderReferences   []string
 	Timestamp          pgtype.Timestamp
-	NameFrom           pgtype.Text
-	AddrFrom           pgtype.Text
+	NameFrom           string
+	AddrFrom           string
 	AddrTo             []string
 	Subject            string
-	Body               *pgtype.Text
+	Body               *string
+	Attachments        []string
 	Messages           *db.ExtractedMessages
 	MessagesLastUpdate pgtype.Timestamp
 	Sorted             bool
