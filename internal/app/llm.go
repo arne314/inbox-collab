@@ -40,7 +40,7 @@ func (llm *LLM) apiRequest(endpoint string, body []byte) ([]byte, error) {
 
 func (llm *LLM) ExtractMessages(mail *model.Mail) {
 	data := map[string]string{
-		"conversation": mail.Body.String,
+		"conversation": *mail.Body,
 		"subject":      mail.Subject,
 		"timestamp":    mail.Timestamp.Time.Format("2006-01-02T15:04"),
 	}

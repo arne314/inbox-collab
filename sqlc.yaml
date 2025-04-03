@@ -12,7 +12,7 @@ sql:
         overrides:
           - column: "mail.body"
             go_type:
-              type: "pgtype.Text"
+              type: "string"
               pointer: true
           - column: "mail.messages"
             nullable: true

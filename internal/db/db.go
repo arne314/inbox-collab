@@ -321,7 +321,7 @@ func (dh *DbHandler) GetOverviewThreads(
 	rooms = make([]string, len(threads))
 	threadMsgs = make([]string, len(threads))
 	for i, thread := range threads {
-		authors[i] = thread.NameFrom.String
+		authors[i] = thread.NameFrom
 		subjects[i] = thread.Subject
 		rooms[i] = thread.MatrixRoomID.String
 		threadMsgs[i] = thread.MessageID.String

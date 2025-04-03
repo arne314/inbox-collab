@@ -84,14 +84,14 @@ func (ic *InboxCollab) storeMails() {
 			modelled = append(modelled, &model.Mail{
 				Fetcher:          pgtype.Text{String: mail.Fetcher, Valid: true},
 				HeaderID:         mail.MessageId,
-				HeaderInReplyTo:  pgtype.Text{String: mail.InReplyTo, Valid: true},
+				HeaderInReplyTo:  mail.InReplyTo,
 				HeaderReferences: mail.References,
 				Subject:          mail.Subject,
 				Timestamp:        pgtype.Timestamp{Time: mail.Date, Valid: true},
-				NameFrom:         pgtype.Text{String: mail.NameFrom, Valid: true},
-				AddrFrom:         pgtype.Text{String: mail.AddrFrom, Valid: true},
+				NameFrom:         mail.NameFrom,
+				AddrFrom:         mail.AddrFrom,
 				AddrTo:           mail.AddrTo,
-				Body:             &pgtype.Text{String: mail.Text, Valid: true},
+				Body:             &mail.Text,
 			})
 		}
 		if ic.dbHandler.AddMails(modelled) > 0 || initial {
@@ -188,7 +188,7 @@ func (ic *InboxCollab) sortMails() {
 			}
 			headAllowed := true
 			for _, regex := range ic.config.Matrix.HeadBlacklistRegex {
-				if regex.MatchString(mail.AddrFrom.String) {
+				if regex.MatchString(mail.AddrFrom) {
 					headAllowed = false
 					break
 				}
@@ -241,8 +241,8 @@ func (ic *InboxCollab) notifyMatrix() {
 		threads := ic.dbHandler.GetMatrixReadyThreads()
 		for _, thread := range threads {
 			ok, roomId, messageId := ic.matrixHandler.CreateThread(
-				thread.Fetcher.String, thread.AddrFrom.String, thread.AddrTo,
-				thread.NameFrom.String, thread.Subject,
+				thread.Fetcher.String, thread.AddrFrom, thread.AddrTo,
+				thread.NameFrom, thread.Subject,
 			)
 			if ok {
 				ic.dbHandler.UpdateThreadMatrixIds(thread.ID, roomId, messageId)
@@ -255,7 +255,7 @@ func (ic *InboxCollab) notifyMatrix() {
 		mails := ic.dbHandler.GetMatrixReadyMails()
 		for _, mail := range mails {
 			ok, matrixId := ic.matrixHandler.AddReply(
-				mail.RootMatrixRoomID.String, mail.RootMatrixID.String, mail.NameFrom.String,
+				mail.RootMatrixRoomID.String, mail.RootMatrixID.String, mail.NameFrom,
 				mail.Subject, mail.Timestamp.Time, *mail.Messages.Messages[0].Content, mail.IsFirst,
 			)
 			if ok {
