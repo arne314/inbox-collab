@@ -33,6 +33,7 @@ CREATE TABLE mail (
     addr_to TEXT[] NOT NULL,
     subject TEXT NOT NULL,
     body TEXT NOT NULL,
+    attachments TEXT[] NOT NULL,
     messages JSONB,
     messages_last_update TIMESTAMP,
     sorted BOOLEAN NOT NULL DEFAULT FALSE,

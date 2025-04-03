@@ -49,6 +49,7 @@ func (dh *DbHandler) AddMails(mails []*db.Mail) int {
 			HeaderInReplyTo:  mail.HeaderInReplyTo,
 			HeaderReferences: mail.HeaderReferences,
 			Timestamp:        mail.Timestamp,
+			Attachments:      mail.Attachments,
 			NameFrom:         mail.NameFrom,
 			AddrFrom:         mail.AddrFrom,
 			AddrTo:           mail.AddrTo,

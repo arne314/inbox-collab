@@ -7,8 +7,8 @@ LEFT JOIN thread ON thread.id = mail.thread
 WHERE mail.id = $1 LIMIT 1;
 
 -- name: AddMail :many
-INSERT INTO mail (fetcher, header_id, header_in_reply_to, header_references, timestamp, name_from, addr_from, addr_to, subject, body)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+INSERT INTO mail (fetcher, header_id, header_in_reply_to, header_references, timestamp, name_from, addr_from, addr_to, subject, body, attachments)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
 ON CONFLICT (header_id) DO NOTHING
 RETURNING *;
 

@@ -77,7 +77,7 @@ func (mf *MailFetcher) parseMessage(msg *imapclient.FetchMessageData) *Mail {
 		log.Errorf("Failed to parse date of mail for %v: %v", mf.name, err)
 		return nil
 	}
-	var attachments []string
+	attachments := make([]string, 0)
 	for _, att := range envelope.Attachments {
 		attachments = append(attachments, att.FileName)
 	}

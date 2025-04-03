@@ -88,6 +88,7 @@ func (ic *InboxCollab) storeMails() {
 				HeaderReferences: mail.References,
 				Subject:          mail.Subject,
 				Timestamp:        pgtype.Timestamp{Time: mail.Date, Valid: true},
+				Attachments:      mail.Attachments,
 				NameFrom:         mail.NameFrom,
 				AddrFrom:         mail.AddrFrom,
 				AddrTo:           mail.AddrTo,
@@ -256,7 +257,8 @@ func (ic *InboxCollab) notifyMatrix() {
 		for _, mail := range mails {
 			ok, matrixId := ic.matrixHandler.AddReply(
 				mail.RootMatrixRoomID.String, mail.RootMatrixID.String, mail.NameFrom,
-				mail.Subject, mail.Timestamp.Time, *mail.Messages.Messages[0].Content, mail.IsFirst,
+				mail.Subject, mail.Timestamp.Time, mail.Attachments,
+				*mail.Messages.Messages[0].Content, mail.IsFirst,
 			)
 			if ok {
 				ic.dbHandler.UpdateMailMatrixId(mail.ID, matrixId)
