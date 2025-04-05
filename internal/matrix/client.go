@@ -99,7 +99,7 @@ func (mc *MatrixClient) Login(cfg *config.Config, actions Actions) {
 		log.Fatalf("Invalid matrix config: %v", err)
 	}
 	mc.client = client
-	mc.commandHandler = &CommandHandler{actions: actions, client: mc}
+	mc.commandHandler = NewCommandHandler(mc.config, actions, mc)
 	syncer := client.Syncer.(*mautrix.DefaultSyncer)
 
 	// listen for messages

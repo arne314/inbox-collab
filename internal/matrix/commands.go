@@ -3,9 +3,12 @@ package matrix
 import (
 	"regexp"
 	"strings"
+	"sync"
 
 	log "github.com/sirupsen/logrus"
 	"maunium.net/go/mautrix/event"
+
+	config "github.com/arne314/inbox-collab/internal/config"
 )
 
 type Actions interface {
@@ -27,6 +30,7 @@ var (
 	commands              []string       = []string{"open", "close", "forceclose"}
 	commandRegex          *regexp.Regexp = regexp.MustCompile(`^!\s?([a-zA-Z]+)`)
 	CommandStateReactions []string       = []string{"👀", "⏳", "✅", "❌"}
+	roomMutexes           map[string]*sync.Mutex
 )
 
 type Command struct {
@@ -50,6 +54,13 @@ func (c *Command) reportState(state CommandState) {
 func (c *Command) Run() {
 	var ok bool
 	var threadId string
+	if lock, ok := roomMutexes[c.roomId]; ok {
+		lock.Lock()
+		defer lock.Unlock()
+	} else {
+		log.Warnf("Ignoring command in invalid room: %v", c.roomId)
+		return
+	}
 	log.Infof("Handling command %v...", c.Name)
 	if rel := c.content.RelatesTo; rel != nil && rel.Type == event.RelThread {
 		threadId = rel.EventID.String()
@@ -104,6 +115,16 @@ func NewCommand(name string, evt *event.Event, client *MatrixClient, actions Act
 type CommandHandler struct {
 	actions Actions
 	client  *MatrixClient
+}
+
+func NewCommandHandler(
+	cfg *config.MatrixConfig, actions Actions, client *MatrixClient,
+) *CommandHandler {
+	roomMutexes = make(map[string]*sync.Mutex, len(cfg.AllRooms))
+	for _, r := range cfg.AllRooms {
+		roomMutexes[r] = new(sync.Mutex)
+	}
+	return &CommandHandler{actions: actions, client: client}
 }
 
 func (ch *CommandHandler) ProcessMessage(evt *event.Event) {
