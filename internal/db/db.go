@@ -56,13 +56,11 @@ func (dh *DbHandler) AddMails(mails []*db.Mail) int {
 			Subject:          mail.Subject,
 			Body:             mail.Body,
 		})
-		if len(inserted) != 0 {
-			count++
-		}
 		if err != nil {
 			log.Errorf("Error adding mail to db: %v", err)
 			break
 		}
+		count += len(inserted)
 	}
 	return count
 }

@@ -42,10 +42,10 @@ func (mh *MailHandler) Setup(
 				globalCfg, mh, fetchedMails,
 			)
 			waitGroup.Add(1)
-			go func() {
-				fetcher.Login()
+			go func(f *MailFetcher) {
+				f.Login()
 				waitGroup.Done()
-			}()
+			}(fetcher)
 			mh.fetchers = append(mh.fetchers, fetcher)
 			if globalCfg.ListMailboxes { // only one fetcher per mail server
 				break
@@ -80,10 +80,10 @@ func (mh *MailHandler) Stop(wg *sync.WaitGroup) {
 	var waitGroup sync.WaitGroup
 	waitGroup.Add(len(mh.fetchers))
 	for _, fetcher := range mh.fetchers {
-		go func() {
-			fetcher.Logout()
+		go func(f *MailFetcher) {
+			f.Logout()
 			waitGroup.Done()
-		}()
+		}(fetcher)
 	}
 	waitGroup.Wait()
 }
