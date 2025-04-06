@@ -64,7 +64,6 @@ func (c *Command) Run() {
 	log.Infof("Handling command %v...", c.Name)
 	if rel := c.content.RelatesTo; rel != nil && rel.Type == event.RelThread {
 		threadId = rel.EventID.String()
-		log.Infof("threadId: %v", threadId)
 	}
 	switch c.Name {
 	case "open":

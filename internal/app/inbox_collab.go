@@ -2,7 +2,6 @@ package app
 
 import (
 	"sync"
-	"time"
 
 	"github.com/jackc/pgx/v5/pgtype"
 	log "github.com/sirupsen/logrus"
@@ -16,10 +15,10 @@ import (
 
 var (
 	waitGroup               *sync.WaitGroup = &sync.WaitGroup{}
-	MessageExtractionStage  *Stage
-	ThreadSortingStage      *Stage
-	MatrixNotificationStage *Stage
-	MatrixOverviewStage     *Stage
+	MessageExtractionStage  *PipelineStage
+	ThreadSortingStage      *PipelineStage
+	MatrixNotificationStage *PipelineStage
+	MatrixOverviewStage     *PipelineStage
 )
 
 type InboxCollab struct {
@@ -98,117 +97,21 @@ func (ic *InboxCollab) storeMails() {
 	}
 }
 
-func (ic *InboxCollab) performMessageExtraction(mail *model.Mail) {
-	ic.llm.ExtractMessages(mail)
-	if mail.Messages == nil || mail.Messages.Messages == nil {
-		log.Errorf("Error extracting messages for mail %v", mail.ID)
-	} else {
-		ic.dbHandler.UpdateExtractedMessages(mail)
-	}
-}
-
-func (ic *InboxCollab) setupMessageExtractionStage() {
-	var wg sync.WaitGroup
-	work := func() bool {
-		mails := ic.dbHandler.GetMailsRequiringMessageExtraction()
-		if len(mails) == 0 {
-			if MessageExtractionStage.IsFirstWork {
-				ThreadSortingStage.QueueWork()
-			}
-			return true
-		}
-		log.Infof("Extracting messages from %v mails...", len(mails))
-		wg.Add(len(mails))
-		for _, mail := range mails {
-			go func(m *model.Mail) {
-				defer wg.Done()
-				ic.performMessageExtraction(m)
-			}(mail)
-		}
-		wg.Wait()
-		log.Infof("Done extracting messages from %v mails", len(mails))
-		ThreadSortingStage.QueueWork()
-		return true
-	}
-	MessageExtractionStage = NewStage(
-		"MessageExtraction", nil, work,
-		false, // initial queueing happens in storeMails()
-	)
-}
-
-func (ic *InboxCollab) setupThreadSortingStage() {
-	work := func() bool {
-		timeSinceMailboxUpdate := time.Now().Sub(ic.mailHandler.GetLastMailboxUpdate()).Seconds()
-		timeSinceSortRequest := ThreadSortingStage.TimeSinceQueued().Seconds()
-		waitForCompleteData := timeSinceMailboxUpdate < 10 && timeSinceSortRequest < 120 // timeout
-		if MessageExtractionStage.Working() || waitForCompleteData {
-			log.Infof("Waiting for complete data to sort threads...")
-			time.Sleep(2 * time.Second)
-			return false
-		}
-
-		ic.dbHandler.AutoUpdateMailSorting()
-		mails := ic.dbHandler.GetMailsRequiringSorting()
-		if len(mails) == 0 {
-			return true
-		}
-		log.Infof("Sorting %v mails...", len(mails))
-		for _, mail := range mails {
-			var threadId int64
-			if mail.ReplyTo.Valid {
-				if m := ic.dbHandler.GetMailById(mail.ReplyTo.Int64); m.Thread.Valid &&
-					!m.ForceClose.Bool {
-					threadId = m.Thread.Int64
-				}
-			}
-			if threadId == 0 {
-				if m := ic.dbHandler.GetReferencedThreadParent(mail); m != nil {
-					if t := m.Thread; t.Valid {
-						threadId = t.Int64
-					}
-				}
-			}
-			if threadId != 0 {
-				ic.dbHandler.AddMailToThread(mail, threadId)
-				continue
-			}
-			headAllowed := true
-			for _, regex := range ic.config.Matrix.HeadBlacklistRegex {
-				if regex.MatchString(mail.AddrFrom) {
-					headAllowed = false
-					log.Infof("Ignoring mail as thread head from %v", mail.AddrFrom)
-					break
-				}
-			}
-			if headAllowed {
-				ic.dbHandler.CreateThread(mail)
-			} else {
-				ic.dbHandler.MarkMailAsSorted(mail)
-			}
-		}
-		log.Infof("Done sorting %v mails", len(mails))
-		MatrixNotificationStage.QueueWork()
-		return true
-	}
-	ThreadSortingStage = NewStage(
-		"ThreadSorting", nil, work,
-		false, // initial queueing happens in message extraction stage
-	)
-}
-
 func (ic *InboxCollab) OpenThread(roomId string, threadId string) bool {
 	ok := ic.dbHandler.UpdateThreadEnabled(roomId, threadId, true, false)
 	if ok {
-		MatrixNotificationStage.QueueWork()
+		MatrixOverviewStage.QueueWork()
 	}
 	return ok
 }
 
 func (ic *InboxCollab) CloseThread(roomId string, threadId string) bool {
-	// force close boolean is ignored internally
-	ok := ic.dbHandler.UpdateThreadEnabled(roomId, threadId, false, false)
+	ok := ic.dbHandler.UpdateThreadEnabled(
+		roomId, threadId, false,
+		false, // force close boolean is ignored internally
+	)
 	if ok {
-		MatrixNotificationStage.QueueWork()
+		MatrixOverviewStage.QueueWork()
 	}
 	return ok
 }
@@ -216,79 +119,9 @@ func (ic *InboxCollab) CloseThread(roomId string, threadId string) bool {
 func (ic *InboxCollab) ForceCloseThread(roomId string, threadId string) bool {
 	ok := ic.dbHandler.UpdateThreadEnabled(roomId, threadId, false, true)
 	if ok {
-		MatrixNotificationStage.QueueWork()
+		MatrixOverviewStage.QueueWork()
 	}
 	return ok
-}
-
-func (ic *InboxCollab) setupMatrixNotificationsStage() {
-	setup := func() {
-		ic.dbHandler.AddAllRooms()
-		if !ic.config.Matrix.VerifySession {
-			ic.matrixHandler.WaitForRoomJoins()
-		}
-	}
-	work := func() bool {
-		if ic.config.Matrix.VerifySession {
-			return true
-		}
-		// post new threads
-		threads := ic.dbHandler.GetMatrixReadyThreads()
-		for _, thread := range threads {
-			ok, roomId, messageId := ic.matrixHandler.CreateThread(
-				thread.Fetcher.String, thread.AddrFrom, thread.AddrTo,
-				thread.NameFrom, thread.Subject,
-			)
-			if ok {
-				ic.dbHandler.UpdateThreadMatrixIds(thread.ID, roomId, messageId)
-			} else {
-				return false
-			}
-		}
-		// add messages to threads
-		mails := ic.dbHandler.GetMatrixReadyMails()
-		for _, mail := range mails {
-			ok, matrixId := ic.matrixHandler.AddReply(
-				mail.RootMatrixRoomID.String, mail.RootMatrixID.String, mail.NameFrom,
-				mail.Subject, mail.Timestamp.Time, mail.Attachments,
-				*mail.Messages.Messages[0].Content, mail.IsFirst,
-			)
-			if ok {
-				ic.dbHandler.UpdateMailMatrixId(mail.ID, matrixId)
-			} else {
-				return false
-			}
-		}
-		updateOverview := len(threads) > 0 || len(mails) > 0
-		if updateOverview {
-			MatrixOverviewStage.QueueWork()
-		}
-		return true
-	}
-	MatrixNotificationStage = NewStage("MatrixNotification", setup, work, true)
-}
-
-func (ic *InboxCollab) setupMatrixOverviewStage() {
-	work := func() bool {
-		if ic.config.Matrix.VerifySession {
-			return true
-		}
-		for overviewRoom := range ic.config.Matrix.RoomsOverview {
-			messageId, authors, subjects, rooms, threadMsgs := ic.dbHandler.GetOverviewThreads(
-				overviewRoom,
-			)
-			ok, messageId := ic.matrixHandler.UpdateThreadOverview(
-				overviewRoom, messageId, authors, subjects, rooms, threadMsgs,
-			)
-			if ok {
-				ic.dbHandler.OverviewMessageUpdated(overviewRoom, messageId)
-			} else {
-				return false
-			}
-		}
-		return true
-	}
-	MatrixOverviewStage = NewStage("MatrixOverview", nil, work, true)
 }
 
 func (ic *InboxCollab) Run() {

@@ -8,7 +8,7 @@ import (
 	log "github.com/sirupsen/logrus"
 )
 
-type Stage struct {
+type PipelineStage struct {
 	name            string
 	setup           func()
 	work            func() bool
@@ -20,11 +20,11 @@ type Stage struct {
 	IsFirstWork     bool
 }
 
-func NewStage(name string, setup func(), work func() bool, initialQueue bool) *Stage {
+func NewStage(name string, setup func(), work func() bool, initialQueue bool) *PipelineStage {
 	if setup == nil {
 		setup = func() {}
 	}
-	stage := &Stage{
+	stage := &PipelineStage{
 		name: name, setup: setup, work: work,
 		IsFirstWork: true, launch: make(chan struct{}, 1),
 	}
@@ -35,10 +35,10 @@ func NewStage(name string, setup func(), work func() bool, initialQueue bool) *S
 	return stage
 }
 
-func (s *Stage) QueueWork() { // ensures that work is queued at most once
+func (s *PipelineStage) QueueWork() { // ensures that work is queued at most once
 	queue := s.done.CompareAndSwap(true, false)
 	if queue {
-		log.Infof("Queued stage '%s'", s.name)
+		log.Infof("Queued pipeline stage '%s'", s.name)
 		s.launch <- struct{}{}
 		s.queuedTimeMutex.Lock()
 		s.queuedTime = time.Now()
@@ -46,10 +46,10 @@ func (s *Stage) QueueWork() { // ensures that work is queued at most once
 	}
 }
 
-func (s *Stage) Run() {
+func (s *PipelineStage) Run() {
 	s.setup()
 	for range s.launch {
-		log.Infof("Executing stage '%s'...", s.name)
+		log.Infof("Executing pipeline stage '%s'...", s.name)
 		s.done.Store(true)
 		s.isWorking.Store(true)
 		retry := true
@@ -58,15 +58,15 @@ func (s *Stage) Run() {
 		}
 		s.isWorking.Store(false)
 		s.IsFirstWork = false
-		log.Infof("Done executing stage '%s'", s.name)
+		log.Infof("Done executing pipeline stage '%s'", s.name)
 	}
 }
 
-func (s *Stage) Working() bool {
+func (s *PipelineStage) Working() bool {
 	return s.isWorking.Load()
 }
 
-func (s *Stage) TimeSinceQueued() time.Duration {
+func (s *PipelineStage) TimeSinceQueued() time.Duration {
 	s.queuedTimeMutex.RLock()
 	defer s.queuedTimeMutex.RUnlock()
 	return time.Now().Sub(s.queuedTime)
