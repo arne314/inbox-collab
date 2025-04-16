@@ -18,7 +18,7 @@ var (
 	MessageExtractionStage  *PipelineStage
 	ThreadSortingStage      *PipelineStage
 	MatrixNotificationStage *PipelineStage
-	MatrixOverviewStage     *PipelineStage
+	MatrixOverviewStages    map[string]*PipelineStage
 )
 
 type InboxCollab struct {
@@ -100,7 +100,7 @@ func (ic *InboxCollab) storeMails() {
 func (ic *InboxCollab) OpenThread(roomId string, threadId string) bool {
 	ok := ic.dbHandler.UpdateThreadEnabled(roomId, threadId, true, false)
 	if ok {
-		MatrixOverviewStage.QueueWork()
+		ic.QueueMatrixOverviewUpdate([]string{roomId})
 	}
 	return ok
 }
@@ -111,7 +111,7 @@ func (ic *InboxCollab) CloseThread(roomId string, threadId string) bool {
 		false, // force close boolean is ignored internally
 	)
 	if ok {
-		MatrixOverviewStage.QueueWork()
+		ic.QueueMatrixOverviewUpdate([]string{roomId})
 	}
 	return ok
 }
@@ -119,7 +119,7 @@ func (ic *InboxCollab) CloseThread(roomId string, threadId string) bool {
 func (ic *InboxCollab) ForceCloseThread(roomId string, threadId string) bool {
 	ok := ic.dbHandler.UpdateThreadEnabled(roomId, threadId, false, true)
 	if ok {
-		MatrixOverviewStage.QueueWork()
+		ic.QueueMatrixOverviewUpdate([]string{roomId})
 	}
 	return ok
 }
@@ -129,7 +129,9 @@ func (ic *InboxCollab) Run() {
 	go MessageExtractionStage.Run()
 	go ThreadSortingStage.Run()
 	go MatrixNotificationStage.Run()
-	go MatrixOverviewStage.Run()
+	for _, stage := range MatrixOverviewStages {
+		go stage.Run()
+	}
 }
 
 func (ic *InboxCollab) Stop(waitGroup *sync.WaitGroup) {

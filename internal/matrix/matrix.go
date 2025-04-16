@@ -42,7 +42,7 @@ func (mh *MatrixHandler) WaitForRoomJoins() {
 func (mh *MatrixHandler) matchRoomsRegexps(regexps map[*regexp.Regexp]string, s string) string {
 	for regex, room := range regexps {
 		if regex.MatchString(s) {
-			log.Infof("Using matrix room %v for: %v", room, s)
+			log.Infof("Using matrix room %v for: %v", mh.config.AliasOfRoom(room), s)
 			return room
 		}
 	}

@@ -1,6 +1,7 @@
 package app
 
 import (
+	"fmt"
 	"sync"
 	"time"
 
@@ -118,6 +119,8 @@ func (ic *InboxCollab) setupMatrixNotificationsStage() {
 		if ic.config.Matrix.VerifySession {
 			return true
 		}
+		touchedRooms := []string{}
+
 		// post new threads
 		threads := ic.dbHandler.GetMatrixReadyThreads()
 		for _, thread := range threads {
@@ -127,6 +130,7 @@ func (ic *InboxCollab) setupMatrixNotificationsStage() {
 			)
 			if ok {
 				ic.dbHandler.UpdateThreadMatrixIds(thread.ID, roomId, messageId)
+				touchedRooms = append(touchedRooms, roomId)
 			} else {
 				return false
 			}
@@ -141,38 +145,62 @@ func (ic *InboxCollab) setupMatrixNotificationsStage() {
 			)
 			if ok {
 				ic.dbHandler.UpdateMailMatrixId(mail.ID, matrixId)
+				touchedRooms = append(touchedRooms, mail.RootMatrixRoomID.String)
 			} else {
 				return false
 			}
 		}
 		updateOverview := len(threads) > 0 || len(mails) > 0
 		if updateOverview {
-			MatrixOverviewStage.QueueWork()
+			ic.QueueMatrixOverviewUpdate(touchedRooms)
 		}
 		return true
 	}
 	MatrixNotificationStage = NewStage("MatrixNotification", setup, work, true)
 }
 
-func (ic *InboxCollab) setupMatrixOverviewStage() {
-	work := func() bool {
-		if ic.config.Matrix.VerifySession {
-			return true
+// touchedRooms: rooms that have been updated (overview rooms will be determined by this function)
+func (ic *InboxCollab) QueueMatrixOverviewUpdate(touchedRooms []string) {
+	notify := make(map[string]bool)
+	for _, target := range touchedRooms {
+		for _, room := range ic.config.Matrix.RoomsOverviewInv[target] {
+			if _, ok := notify[room]; !ok {
+				notify[room] = true
+			}
 		}
-		for overviewRoom := range ic.config.Matrix.RoomsOverview {
+	}
+	for room := range notify {
+		if stage, ok := MatrixOverviewStages[room]; ok {
+			stage.QueueWork()
+		}
+	}
+}
+
+func (ic *InboxCollab) setupMatrixOverviewStage() {
+	genWork := func(roomId string) func() bool {
+		return func() bool {
+			if ic.config.Matrix.VerifySession {
+				return true
+			}
 			messageId, authors, subjects, rooms, threadMsgs := ic.dbHandler.GetOverviewThreads(
-				overviewRoom,
+				roomId,
 			)
 			ok, messageId := ic.matrixHandler.UpdateThreadOverview(
-				overviewRoom, messageId, authors, subjects, rooms, threadMsgs,
+				roomId, messageId, authors, subjects, rooms, threadMsgs,
 			)
 			if ok {
-				ic.dbHandler.OverviewMessageUpdated(overviewRoom, messageId)
+				ic.dbHandler.OverviewMessageUpdated(roomId, messageId)
 			} else {
 				return false
 			}
+			return true
 		}
-		return true
 	}
-	MatrixOverviewStage = NewStage("MatrixOverview", nil, work, true)
+	MatrixOverviewStages = make(map[string]*PipelineStage)
+	for overviewRoom := range ic.config.Matrix.RoomsOverview {
+		MatrixOverviewStages[overviewRoom] = NewStage(
+			fmt.Sprintf("MatrixOverview[%s]", ic.config.Matrix.AliasOfRoom(overviewRoom)),
+			nil, genWork(overviewRoom), true,
+		)
+	}
 }

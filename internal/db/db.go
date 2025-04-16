@@ -306,9 +306,6 @@ func (dh *DbHandler) GetOverviewThreads(
 	messageId = room.OverviewMessageID.String
 
 	targets := dh.config.Matrix.RoomsOverview[overviewRoom]
-	if len(targets) == 0 {
-		targets = dh.config.Matrix.AllRooms
-	}
 	threads, err := dh.queries.GetOverviewThreads(ctx, targets)
 	if err != nil {
 		log.Errorf("Error reading overview room %v from db: %v", overviewRoom, err)
