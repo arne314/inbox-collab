@@ -163,7 +163,7 @@ func (ic *InboxCollab) setupMatrixNotificationsStage() {
 func (ic *InboxCollab) QueueMatrixOverviewUpdate(touchedRooms []string) {
 	notify := make(map[string]bool)
 	for _, target := range touchedRooms {
-		for _, room := range ic.config.Matrix.RoomsOverviewInv[target] {
+		for _, room := range ic.config.Matrix.GetOverviewRooms(target) {
 			if _, ok := notify[room]; !ok {
 				notify[room] = true
 			}
@@ -197,7 +197,7 @@ func (ic *InboxCollab) setupMatrixOverviewStage() {
 		}
 	}
 	MatrixOverviewStages = make(map[string]*PipelineStage)
-	for overviewRoom := range ic.config.Matrix.RoomsOverview {
+	for _, overviewRoom := range ic.config.Matrix.AllOverviewRooms() {
 		MatrixOverviewStages[overviewRoom] = NewStage(
 			fmt.Sprintf("MatrixOverview[%s]", ic.config.Matrix.AliasOfRoom(overviewRoom)),
 			nil, genWork(overviewRoom), true,

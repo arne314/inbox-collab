@@ -65,7 +65,7 @@ func (mh *MatrixHandler) determineMatrixRoom(
 		return room
 	}
 	log.Infof("Using default matrix room for: to=%v from=%v mailbox=%v", addrTo, addrFrom, fetcher)
-	return mh.config.DefaultRoom
+	return mh.config.DefaultRoom.String()
 }
 
 func (mh *MatrixHandler) CreateThread(

@@ -12,6 +12,22 @@ import (
 	log "github.com/sirupsen/logrus"
 )
 
+var (
+	roomAliases    map[string]string // alias -> room
+	roomAliasesInv map[string]string // room -> alias
+)
+
+type Room string // either a room id or an alias
+
+func (r Room) String() string { // returns a room id
+	s := string(r)
+	if res, ok := roomAliases[s]; ok {
+		roomAliasesInv[res] = s
+		return res
+	}
+	return s
+}
+
 type LLMConfig struct {
 	ApiUrl string `toml:"python_api"`
 }
@@ -31,16 +47,14 @@ type MailConfig struct {
 }
 
 type MatrixConfig struct {
-	Aliases       map[string]string   `toml:"aliases"`
-	DefaultRoom   string              `toml:"default_room"`
-	RoomsAddrFrom map[string]string   `toml:"rooms_addr_from"`
-	RoomsAddrTo   map[string]string   `toml:"rooms_addr_to"`
-	RoomsMailbox  map[string]string   `toml:"rooms_mailbox"`
-	RoomsOverview map[string][]string `toml:"overview"`
-	HeadBlacklist []string            `toml:"head_blacklist"`
+	Aliases       map[string]string `toml:"aliases"`
+	DefaultRoom   Room              `toml:"default_room"`
+	RoomsAddrFrom map[string]Room   `toml:"rooms_addr_from"`
+	RoomsAddrTo   map[string]Room   `toml:"rooms_addr_to"`
+	RoomsMailbox  map[string]Room   `toml:"rooms_mailbox"`
+	RoomsOverview map[Room][]Room   `toml:"overview"`
+	HeadBlacklist []string          `toml:"head_blacklist"`
 
-	AllRooms           []string
-	AliasesInv         map[string]string   // room -> alias
 	RoomsOverviewInv   map[string][]string // target -> overview rooms
 	RoomsAddrFromRegex map[*regexp.Regexp]string
 	RoomsAddrToRegex   map[*regexp.Regexp]string
@@ -65,23 +79,50 @@ func (c *Config) getenv(name string) string {
 	return os.Getenv(name)
 }
 
-func (c *MatrixConfig) getRoomByAlias(alias string) string {
-	var result string
-	if room, ok := c.Aliases[alias]; ok {
-		result = room
-		c.AliasesInv[room] = alias
-	} else {
-		result = alias
-	}
-	c.AllRooms = append(c.AllRooms, result)
-	return result
-}
-
 func (c *MatrixConfig) AliasOfRoom(roomId string) string {
-	if alias, ok := c.AliasesInv[roomId]; ok {
+	if alias, ok := roomAliasesInv[roomId]; ok {
 		return alias
 	}
 	return roomId // fallback
+}
+
+func (c *MatrixConfig) AllRooms() []string {
+	res := make([]string, len(roomAliasesInv))
+	idx := 0
+	for room := range roomAliasesInv {
+		res[idx] = room
+		idx++
+	}
+	return res
+}
+
+func (c *MatrixConfig) GetOverviewRoomTargets(overviewRoom string) (targets []string) {
+	targetsRaw := c.RoomsOverview[Room(overviewRoom)]
+	if len(targetsRaw) == 0 {
+		return c.AllRooms()
+	}
+	targets = make([]string, len(targetsRaw))
+	for i, t := range targetsRaw {
+		targets[i] = t.String()
+	}
+	return
+}
+
+func (c *MatrixConfig) GetOverviewRooms(target string) []string {
+	if rooms, ok := c.RoomsOverviewInv[target]; ok {
+		return rooms
+	}
+	return c.RoomsOverviewInv[""]
+}
+
+func (c *MatrixConfig) AllOverviewRooms() (rooms []string) {
+	rooms = make([]string, len(c.RoomsOverview))
+	idx := 0
+	for r := range c.RoomsOverview {
+		rooms[idx] = r.String()
+		idx++
+	}
+	return
 }
 
 func (c *Config) Load() {
@@ -108,6 +149,8 @@ func (c *Config) Load() {
 	flag.Parse()
 	c.Matrix.VerifySession = *flagVerifyMatrix
 	c.Mail.ListMailboxes = *flagListMailboxes
+	roomAliases = c.Matrix.Aliases
+	roomAliasesInv = make(map[string]string)
 	log.Infof("Loaded config: %+v", c)
 
 	// load .env
@@ -131,9 +174,7 @@ func (c *Config) Load() {
 		}
 	}
 
-	// validation
-	c.Matrix.AllRooms = []string{}
-	c.Matrix.AliasesInv = make(map[string]string)
+	// regex validation
 	c.Matrix.HeadBlacklistRegex = make([]*regexp.Regexp, len(c.Matrix.HeadBlacklist))
 	for i, addr := range c.Matrix.HeadBlacklist {
 		regex, err := regexp.CompilePOSIX(addr)
@@ -143,13 +184,13 @@ func (c *Config) Load() {
 			c.Matrix.HeadBlacklistRegex[i] = regex
 		}
 	}
-	validateRoomsRegex := func(configs map[string]string, regexps map[*regexp.Regexp]string) {
+	validateRoomsRegex := func(configs map[string]Room, regexps map[*regexp.Regexp]string) {
 		for addr, room := range configs {
 			regex, err := regexp.CompilePOSIX(addr)
 			if err != nil {
 				log.Fatalf("Matrix room config \"%s\" invalid: %v", addr, err)
 			} else {
-				regexps[regex] = c.Matrix.getRoomByAlias(room)
+				regexps[regex] = room.String()
 			}
 		}
 	}
@@ -160,21 +201,22 @@ func (c *Config) Load() {
 	validateRoomsRegex(c.Matrix.RoomsAddrTo, c.Matrix.RoomsAddrToRegex)
 	validateRoomsRegex(c.Matrix.RoomsMailbox, c.Matrix.RoomsMailboxRegex)
 
-	c.Matrix.DefaultRoom = c.Matrix.getRoomByAlias(c.Matrix.DefaultRoom)
-	overview := make(map[string][]string)
+	// handle aliases in overview map
+	overview := make(map[Room][]Room)
 	overviewInv := make(map[string][]string)
-	for alias, targets := range c.Matrix.RoomsOverview {
-		room := c.Matrix.getRoomByAlias(alias)
-		if len(targets) == 0 { // overview of all rooms
-			targets = c.Matrix.AllRooms
+	overviewInv[""] = make([]string, 0)
+	for r, targets := range c.Matrix.RoomsOverview {
+		room := r.String()
+		targetRooms := make([]Room, len(targets))
+		for i, t := range targets {
+			target := t.String()
+			targetRooms[i] = Room(target)
+			overviewInv[target] = append(overviewInv[target], room)
 		}
-		targetRooms := make([]string, len(targets))
-		for i, target := range targets {
-			t := c.Matrix.getRoomByAlias(target)
-			targetRooms[i] = t
-			overviewInv[t] = append(overviewInv[t], room)
+		if len(targets) == 0 {
+			overviewInv[""] = append(overviewInv[""], room)
 		}
-		overview[room] = targetRooms
+		overview[Room(room)] = targetRooms
 	}
 	c.Matrix.RoomsOverview = overview
 	c.Matrix.RoomsOverviewInv = overviewInv

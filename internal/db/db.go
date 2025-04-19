@@ -273,7 +273,7 @@ func (dh *DbHandler) UpdateThreadEnabled(
 
 func (dh *DbHandler) AddAllRooms() {
 	ctx := context.Background()
-	for _, room := range dh.config.Matrix.AllRooms {
+	for _, room := range dh.config.Matrix.AllRooms() {
 		err := dh.queries.AddRoom(ctx, room)
 		if err != nil {
 			log.Errorf("Error adding room to db: %v", err)
@@ -305,7 +305,7 @@ func (dh *DbHandler) GetOverviewThreads(
 	}
 	messageId = room.OverviewMessageID.String
 
-	targets := dh.config.Matrix.RoomsOverview[overviewRoom]
+	targets := dh.config.Matrix.GetOverviewRoomTargets(overviewRoom)
 	threads, err := dh.queries.GetOverviewThreads(ctx, targets)
 	if err != nil {
 		log.Errorf("Error reading overview room %v from db: %v", overviewRoom, err)

@@ -117,7 +117,7 @@ func (mc *MatrixClient) Login(cfg *config.Config, actions Actions) {
 		if evt.GetStateKey() == client.UserID.String() &&
 			evt.Content.AsMember().Membership == event.MembershipInvite {
 			validRoom := false
-			for _, room := range mc.config.AllRooms {
+			for _, room := range mc.config.AllRooms() {
 				if room == evt.RoomID.String() {
 					validRoom = true
 					break
@@ -201,7 +201,7 @@ func (mc *MatrixClient) ValidateRooms() (ok bool, missing string) {
 		log.Errorf("Error fetching joined rooms: %v", err)
 		return true, ""
 	}
-	for _, room := range mc.config.AllRooms {
+	for _, room := range mc.config.AllRooms() {
 		member := false
 		for _, j := range joined.JoinedRooms {
 			if j.String() == room {

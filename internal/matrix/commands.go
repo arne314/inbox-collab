@@ -119,8 +119,9 @@ type CommandHandler struct {
 func NewCommandHandler(
 	cfg *config.MatrixConfig, actions Actions, client *MatrixClient,
 ) *CommandHandler {
-	roomMutexes = make(map[string]*sync.Mutex, len(cfg.AllRooms))
-	for _, r := range cfg.AllRooms {
+	allRooms := cfg.AllRooms()
+	roomMutexes = make(map[string]*sync.Mutex, len(allRooms))
+	for _, r := range allRooms {
 		roomMutexes[r] = new(sync.Mutex)
 	}
 	return &CommandHandler{actions: actions, client: client}
