@@ -444,7 +444,7 @@ func (q *Queries) GetMatrixReadyThreads(ctx context.Context) ([]*GetMatrixReadyT
 }
 
 const getOverviewThreads = `-- name: GetOverviewThreads :many
-SELECT thread.id, thread.enabled, thread.force_close, thread.last_message, thread.matrix_id, thread.matrix_room_id, thread.first_mail, thread.last_mail, mail.name_from, mail.subject, mail.matrix_id AS message_id
+SELECT thread.id, thread.enabled, thread.force_close, thread.last_message, thread.matrix_id, thread.matrix_room_id, thread.first_mail, thread.last_mail, mail.name_from, mail.addr_from, mail.subject, mail.matrix_id AS message_id
 FROM thread
 JOIN mail ON mail.id = thread.first_mail
 WHERE thread.enabled AND thread.matrix_room_id = ANY($1::text[]) AND thread.matrix_id IS NOT NULL
@@ -461,6 +461,7 @@ type GetOverviewThreadsRow struct {
 	FirstMail    pgtype.Int8
 	LastMail     pgtype.Int8
 	NameFrom     string
+	AddrFrom     string
 	Subject      string
 	MessageID    pgtype.Text
 }
@@ -484,6 +485,7 @@ func (q *Queries) GetOverviewThreads(ctx context.Context, dollar_1 []string) ([]
 			&i.FirstMail,
 			&i.LastMail,
 			&i.NameFrom,
+			&i.AddrFrom,
 			&i.Subject,
 			&i.MessageID,
 		); err != nil {
