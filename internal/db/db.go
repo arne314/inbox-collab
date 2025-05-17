@@ -2,6 +2,8 @@ package db
 
 import (
 	"context"
+	"regexp"
+	"strings"
 	"sync"
 
 	"github.com/jackc/pgx/v5/pgtype"
@@ -207,11 +209,27 @@ func (dh *DbHandler) UpdateMailFetcherState(id string, uidLast uint32, uidValidi
 	}
 }
 
+var emailRegex = regexp.MustCompile("^([^@]+)@.*$")
+
+func displayName(name string, email string) string {
+	if strings.TrimSpace(name) == "" {
+		parsed := emailRegex.FindStringSubmatch(email)
+		if parsed != nil && len(parsed) >= 2 {
+			return parsed[1]
+		}
+		return email
+	}
+	return name
+}
+
 func (dh *DbHandler) GetMatrixReadyThreads() []*db.GetMatrixReadyThreadsRow {
 	threads, err := dh.queries.GetMatrixReadyThreads(context.Background())
 	if err != nil {
 		log.Errorf("Error getting matrix ready threads from db: %v", err)
 		return []*db.GetMatrixReadyThreadsRow{}
+	}
+	for _, thread := range threads {
+		thread.NameFrom = displayName(thread.NameFrom, thread.AddrFrom)
 	}
 	log.Infof("Fetched %v threads ready to be associated with a matrix message", len(threads))
 	return threads
@@ -222,6 +240,9 @@ func (dh *DbHandler) GetMatrixReadyMails() []*db.GetMatrixReadyMailsRow {
 	if err != nil {
 		log.Errorf("Error getting matrix ready mails from db: %v", err)
 		return []*db.GetMatrixReadyMailsRow{}
+	}
+	for _, mail := range mails {
+		mail.NameFrom = displayName(mail.NameFrom, mail.AddrFrom)
 	}
 	log.Infof("Fetched %v mails ready to be associated with a matrix message", len(mails))
 	return mails
@@ -317,7 +338,7 @@ func (dh *DbHandler) GetOverviewThreads(
 	rooms = make([]string, len(threads))
 	threadMsgs = make([]string, len(threads))
 	for i, thread := range threads {
-		authors[i] = thread.NameFrom
+		authors[i] = displayName(thread.NameFrom, thread.AddrFrom)
 		subjects[i] = thread.Subject
 		rooms[i] = thread.MatrixRoomID.String
 		threadMsgs[i] = thread.MessageID.String

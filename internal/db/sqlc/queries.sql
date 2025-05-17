@@ -107,7 +107,7 @@ SET matrix_id = $2
 WHERE id = $1;
 
 -- name: GetOverviewThreads :many
-SELECT thread.*, mail.name_from, mail.subject, mail.matrix_id AS message_id
+SELECT thread.*, mail.name_from, mail.addr_from, mail.subject, mail.matrix_id AS message_id
 FROM thread
 JOIN mail ON mail.id = thread.first_mail
 WHERE thread.enabled AND thread.matrix_room_id = ANY($1::text[]) AND thread.matrix_id IS NOT NULL
