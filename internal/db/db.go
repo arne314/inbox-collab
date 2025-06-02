@@ -302,6 +302,16 @@ func (dh *DbHandler) AddAllRooms() {
 	}
 }
 
+func (dh *DbHandler) GetRoom(overviewRoom string) *db.Room {
+	ctx := context.Background()
+	room, err := dh.queries.GetRoom(ctx, overviewRoom)
+	if err != nil {
+		log.Errorf("Error fetching room: %v", err)
+		return nil
+	}
+	return room
+}
+
 func (dh *DbHandler) UpdateRoomOverviewMessage(roomId string, messageId string) {
 	err := dh.queries.UpdateRoomOverviewMessage(
 		context.Background(),

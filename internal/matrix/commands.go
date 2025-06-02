@@ -2,6 +2,7 @@ package matrix
 
 import (
 	"regexp"
+	"slices"
 	"strings"
 	"sync"
 
@@ -15,6 +16,8 @@ type Actions interface {
 	OpenThread(roomId string, threadId string) bool
 	CloseThread(roomId string, threadId string) bool
 	ForceCloseThread(roomId string, threadId string) bool
+	ResendThreadOverview(roomId string) bool
+	ResendThreadOverviewAll() bool
 }
 
 type CommandState int
@@ -27,8 +30,14 @@ const (
 )
 
 var (
-	commands              []string       = []string{"open", "close", "forceclose"}
-	commandRegex          *regexp.Regexp = regexp.MustCompile(`^!\s?([a-zA-Z]+)`)
+	commands []string = []string{
+		"open",
+		"close",
+		"forceclose",
+		"resendoverview",
+		"resendoverviewall",
+	}
+	commandRegex          *regexp.Regexp = regexp.MustCompile(`^!\s*([a-zA-Z]+)`)
 	CommandStateReactions []string       = []string{"👀", "⏳", "✅", "❌"}
 	roomMutexes           map[string]*sync.Mutex
 )
@@ -84,6 +93,10 @@ func (c *Command) Run() {
 		} else {
 			ok = c.actions.ForceCloseThread(c.roomId, threadId)
 		}
+	case "resendoverview":
+		ok = c.actions.ResendThreadOverview(c.roomId)
+	case "resendoverviewall":
+		ok = c.actions.ResendThreadOverviewAll()
 	default:
 		ok = false
 	}
@@ -134,11 +147,8 @@ func (ch *CommandHandler) ProcessMessage(evt *event.Event) {
 		return
 	}
 	cmd := strings.ToLower(parsed[1])
-	for _, valid := range commands {
-		if valid == cmd {
-			c := NewCommand(cmd, evt, ch.client, ch.actions)
-			go c.Run()
-			break
-		}
+	if slices.Contains(commands, cmd) {
+		c := NewCommand(cmd, evt, ch.client, ch.actions)
+		go c.Run()
 	}
 }

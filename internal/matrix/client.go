@@ -269,6 +269,17 @@ func (mc *MatrixClient) SendThreadMessage(
 	return true, resp.EventID.String()
 }
 
+func (mc *MatrixClient) RedactMessage(roomId, messageId string) bool {
+	ctx := context.Background()
+	_, err := mc.client.RedactEvent(ctx, id.RoomID(roomId), id.EventID(messageId))
+	if err != nil {
+		log.Errorf("Error redacting message event: %v", err)
+		mc.SleepOnRateLimit(err)
+		return false
+	}
+	return true
+}
+
 func (mc *MatrixClient) MessageRedacted(roomId string, messageId string) bool {
 	evt, err := mc.client.GetEvent(context.Background(), id.RoomID(roomId), id.EventID(messageId))
 	if err != nil {
@@ -309,10 +320,7 @@ func (mc *MatrixClient) EditRoomMessage(
 	)
 	if err != nil {
 		if strings.Contains(err.Error(), "M_TOO_LARGE") {
-			_, err = mc.client.RedactEvent(ctx, id.RoomID(roomId), id.EventID(messageId))
-			if err != nil {
-				log.Errorf("Error redacting message event: %v", err)
-				mc.SleepOnRateLimit(err)
+			if !mc.RedactMessage(roomId, messageId) {
 				return false, ""
 			}
 			return mc.SendRoomMessage(roomId, text, html)

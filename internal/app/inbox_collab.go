@@ -1,6 +1,7 @@
 package app
 
 import (
+	"slices"
 	"sync"
 
 	"github.com/jackc/pgx/v5/pgtype"
@@ -123,6 +124,37 @@ func (ic *InboxCollab) ForceCloseThread(roomId string, threadId string) bool {
 	ok := ic.dbHandler.UpdateThreadEnabled(roomId, threadId, false, true)
 	if ok {
 		ic.QueueMatrixOverviewUpdate([]string{roomId})
+	}
+	return ok
+}
+
+func (ic *InboxCollab) ResendThreadOverview(roomId string) bool {
+	ok := false
+	if !slices.Contains(ic.config.Matrix.AllOverviewRooms(), roomId) {
+		return false
+	}
+	room := ic.dbHandler.GetRoom(roomId)
+	if room != nil {
+		ok = ic.matrixHandler.RemoveThreadOverview(roomId, room.OverviewMessageID.String)
+		if ok {
+			MatrixOverviewStages[roomId].QueueWork()
+		}
+	}
+	return ok
+}
+
+func (ic *InboxCollab) ResendThreadOverviewAll() bool {
+	ok := true
+	rooms := ic.config.Matrix.AllOverviewRooms()
+	for _, roomId := range rooms {
+		room := ic.dbHandler.GetRoom(roomId)
+		if room != nil {
+			if ic.matrixHandler.RemoveThreadOverview(roomId, room.OverviewMessageID.String) {
+				MatrixOverviewStages[roomId].QueueWork()
+			} else {
+				ok = false
+			}
+		}
 	}
 	return ok
 }

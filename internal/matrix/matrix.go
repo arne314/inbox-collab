@@ -134,6 +134,12 @@ func (mh *MatrixHandler) UpdateThreadOverview(
 	}
 }
 
+func (mh *MatrixHandler) RemoveThreadOverview(
+	overviewRoomId, overviewMessageId string,
+) bool {
+	return mh.client.RedactMessage(overviewRoomId, overviewMessageId)
+}
+
 func (mh *MatrixHandler) Stop(waitGroup *sync.WaitGroup) {
 	defer waitGroup.Done()
 	mh.client.Stop()

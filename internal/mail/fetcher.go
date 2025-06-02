@@ -128,7 +128,7 @@ func (mf *MailFetcher) FetchMessages() []*Mail {
 	fetch := mf.client.Fetch(search.All, fetchOptions)
 	defer fetch.Close()
 
-	for i := 0; i < msgCount; i++ {
+	for i := range msgCount {
 		msg := fetch.Next()
 		if msg == nil {
 			log.Errorf("Fetched invalid message for %v from id %v", mf.name, uids[i])
