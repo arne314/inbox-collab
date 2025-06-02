@@ -30,7 +30,6 @@ func main() {
 	inboxCollab.Setup(config, dbHandler, mailHandler, matrixHandler)
 
 	go mailHandler.Run()
-	go matrixHandler.Run()
 	go inboxCollab.Run()
 
 	stop := make(chan os.Signal, 1)

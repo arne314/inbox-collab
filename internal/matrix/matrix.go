@@ -19,13 +19,10 @@ type MatrixHandler struct {
 
 func (mh *MatrixHandler) Setup(cfg *config.Config, actions Actions, wg *sync.WaitGroup) {
 	defer wg.Done()
+	mh.config = cfg.Matrix
 	mh.client = &MatrixClient{}
 	mh.client.Login(cfg, actions)
-	mh.config = cfg.Matrix
-}
-
-func (mh *MatrixHandler) Run() {
-	mh.client.Run()
+	go mh.client.Sync()
 }
 
 func (mh *MatrixHandler) WaitForRoomJoins() {
@@ -110,7 +107,7 @@ func (mh *MatrixHandler) UpdateThreadOverview(
 	builder.WriteLine("Overview", "<h2>Overview</h2>")
 	nAuthors := len(authors)
 
-	for i := 0; i < nAuthors; i++ {
+	for i := range nAuthors {
 		link := formatMessageLink(rooms[i], threadMsgs[i], mh.config.HomeServer)
 		textTitle, htlmTitle := formatAttribute(authors[i], subjects[i])
 		textLine := fmt.Sprintf("%s - %s", textTitle, link)

@@ -56,11 +56,14 @@ func (ic *InboxCollab) Setup(
 	ic.matrixHandler = matrixHandler
 	ic.llm = &LLM{config: config.LLM}
 	ic.fetchedMails = make(chan []*mail.Mail, 100)
-	waitGroup.Add(2)
-	go mailHandler.Setup(config.Mail, waitGroup, ic.fetchedMails, FetcherStateStorageImpl{
-		getState:  dbHandler.GetMailFetcherState,
-		saveState: dbHandler.UpdateMailFetcherState,
-	})
+	if !config.Matrix.VerifySession {
+		waitGroup.Add(1)
+		go mailHandler.Setup(config.Mail, waitGroup, ic.fetchedMails, FetcherStateStorageImpl{
+			getState:  dbHandler.GetMailFetcherState,
+			saveState: dbHandler.UpdateMailFetcherState,
+		})
+	}
+	waitGroup.Add(1)
 	go matrixHandler.Setup(config, ic, waitGroup)
 	waitGroup.Wait()
 	ic.setupMessageExtractionStage()
@@ -125,6 +128,9 @@ func (ic *InboxCollab) ForceCloseThread(roomId string, threadId string) bool {
 }
 
 func (ic *InboxCollab) Run() {
+	if ic.config.Mail.ListMailboxes || ic.config.Matrix.VerifySession {
+		return
+	}
 	go ic.storeMails()
 	go MessageExtractionStage.Run()
 	go ThreadSortingStage.Run()

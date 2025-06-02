@@ -2,7 +2,9 @@ package matrix
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
@@ -23,6 +25,7 @@ import (
 type MatrixClient struct {
 	config             *config.MatrixConfig
 	client             *mautrix.Client
+	cancelSync         context.CancelFunc
 	cryptoHelper       *cryptohelper.CryptoHelper
 	verificationHelper *verificationhelper.VerificationHelper
 	autoVerifySession  bool
@@ -116,13 +119,7 @@ func (mc *MatrixClient) Login(cfg *config.Config, actions Actions) {
 	syncer.OnEventType(event.StateMember, func(ctx context.Context, evt *event.Event) {
 		if evt.GetStateKey() == client.UserID.String() &&
 			evt.Content.AsMember().Membership == event.MembershipInvite {
-			validRoom := false
-			for _, room := range mc.config.AllRooms() {
-				if room == evt.RoomID.String() {
-					validRoom = true
-					break
-				}
-			}
+			validRoom := slices.Contains(mc.config.AllRooms(), evt.RoomID.String())
 			if !validRoom {
 				log.Warnf("Rejecting invite to room not mentioned in the config: %v", evt.RoomID)
 				return
@@ -336,14 +333,17 @@ func (mc *MatrixClient) ReactToMessage(roomId string, messageId string, reaction
 	}
 }
 
-func (mc *MatrixClient) Run() {
-	err := mc.client.Sync()
-	if err != nil {
+func (mc *MatrixClient) Sync() {
+	syncCtx, cancelSync := context.WithCancel(context.Background())
+	mc.cancelSync = cancelSync
+	err := mc.client.SyncWithContext(syncCtx)
+	if err != nil && !errors.Is(err, context.Canceled) {
 		log.Fatalf("Error syncing with matrix server: %v", err)
 	}
 }
 
 func (mc *MatrixClient) Stop() {
-	mc.client.StopSync()
+	mc.cancelSync()
+	mc.cryptoHelper.Close()
 	log.Info("Stopped matrix sync")
 }
