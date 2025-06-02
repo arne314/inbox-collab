@@ -115,8 +115,8 @@ func (mc *MatrixClient) Login(cfg *config.Config, actions Actions) {
 		}
 	})
 
-	// accept room invites
 	syncer.OnEventType(event.StateMember, func(ctx context.Context, evt *event.Event) {
+		// accept room invites
 		if evt.GetStateKey() == client.UserID.String() &&
 			evt.Content.AsMember().Membership == event.MembershipInvite {
 			validRoom := slices.Contains(mc.config.AllRooms(), evt.RoomID.String())
@@ -128,6 +128,12 @@ func (mc *MatrixClient) Login(cfg *config.Config, actions Actions) {
 			if err != nil {
 				log.Errorf("Error joining room: %v", err)
 			}
+		}
+
+		// resend overview on member join
+		if evt.GetStateKey() != client.UserID.String() &&
+			evt.Content.AsMember().Membership == event.MembershipJoin {
+			mc.commandHandler.Actions.ResendThreadOverview(string(evt.RoomID))
 		}
 	})
 

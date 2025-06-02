@@ -125,7 +125,7 @@ func NewCommand(name string, evt *event.Event, client *MatrixClient, actions Act
 }
 
 type CommandHandler struct {
-	actions Actions
+	Actions Actions
 	client  *MatrixClient
 }
 
@@ -137,7 +137,7 @@ func NewCommandHandler(
 	for _, r := range allRooms {
 		roomMutexes[r] = new(sync.Mutex)
 	}
-	return &CommandHandler{actions: actions, client: client}
+	return &CommandHandler{Actions: actions, client: client}
 }
 
 func (ch *CommandHandler) ProcessMessage(evt *event.Event) {
@@ -148,7 +148,7 @@ func (ch *CommandHandler) ProcessMessage(evt *event.Event) {
 	}
 	cmd := strings.ToLower(parsed[1])
 	if slices.Contains(commands, cmd) {
-		c := NewCommand(cmd, evt, ch.client, ch.actions)
+		c := NewCommand(cmd, evt, ch.client, ch.Actions)
 		go c.Run()
 	}
 }
