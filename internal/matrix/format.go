@@ -62,6 +62,10 @@ func formatAttribute(name string, value string) (string, string) {
 	return textMessage, htmlMessage
 }
 
+func formatBold(message string) (string, string) {
+	return message, wrapHtmlStrong(message)
+}
+
 func formatHtml(text string) string {
 	return strings.ReplaceAll(text, "\n", "<br>")
 }

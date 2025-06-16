@@ -10,6 +10,7 @@ import (
 	log "github.com/sirupsen/logrus"
 
 	config "github.com/arne314/inbox-collab/internal/config"
+	model "github.com/arne314/inbox-collab/internal/db/sqlc"
 )
 
 type MatrixHandler struct {
@@ -76,12 +77,16 @@ func (mh *MatrixHandler) CreateThread(
 
 func (mh *MatrixHandler) AddReply(
 	roomId string, threadId string, author string, subject string,
-	timestamp time.Time, attachments []string, message string, isFirst bool,
+	timestamp time.Time, attachments []string, conversation model.ExtractedMessages, isFirst bool,
 ) (bool, string) {
 	builder := NewTextHtmlBuilder()
 	hasHead := false
 	if !isFirst {
 		builder.WriteLine(formatAttribute(author, subject))
+		hasHead = true
+	}
+	if conversation.Forwarded {
+		builder.WriteLine(formatAttribute("Forwarded", *conversation.ForwardedBy))
 		hasHead = true
 	}
 	if time := formatTime(timestamp); time != "" {
@@ -95,7 +100,23 @@ func (mh *MatrixHandler) AddReply(
 	if hasHead {
 		builder.NewLine()
 	}
-	builder.Write(message, formatHtml(message))
+
+	if conversation.Forwarded { // post entire history
+		for i, message := range conversation.Messages {
+			builder.WriteLine(formatBold(fmt.Sprintf("%s %s", message.Author, formatTime(*message.Timestamp))))
+			content := *message.Content
+			txt, html := content, formatHtml(content)
+			if i < len(conversation.Messages)-1 {
+				builder.WriteLine(txt, html)
+				builder.NewLine()
+			} else {
+				builder.Write(txt, html)
+			}
+		}
+	} else {
+		content := *conversation.Messages[0].Content
+		builder.Write(content, formatHtml(content))
+	}
 	return mh.client.SendThreadMessage(roomId, threadId, builder.Text(), builder.Html())
 }
 

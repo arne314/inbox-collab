@@ -141,7 +141,7 @@ func (ic *InboxCollab) setupMatrixNotificationsStage() {
 			ok, matrixId := ic.matrixHandler.AddReply(
 				mail.RootMatrixRoomID.String, mail.RootMatrixID.String, mail.NameFrom,
 				mail.Subject, mail.Timestamp.Time, mail.Attachments,
-				*mail.Messages.Messages[0].Content, mail.IsFirst,
+				*mail.Messages, mail.IsFirst,
 			)
 			if ok {
 				ic.dbHandler.UpdateMailMatrixId(mail.ID, matrixId)
