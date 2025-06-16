@@ -27,8 +27,12 @@ class ParseMessagesRequest(BaseModel):
     conversation: str
     subject: str
     timestamp: datetime
+    reply_candidate: bool
+    forward_candidate: bool
 
 
 @app.post("/parse_messages")
 async def parse_messages(req: ParseMessagesRequest):
-    return await message_parser.parse_messages(req.conversation, req.subject, req.timestamp)
+    return await message_parser.parse_messages(
+        req.conversation, req.subject, req.timestamp, req.reply_candidate, req.forward_candidate
+    )

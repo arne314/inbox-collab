@@ -10,11 +10,13 @@ from langchain_core.runnables import Runnable
 from langchain_ollama import OllamaLLM
 from langchain_openai import ChatOpenAI
 
-from .prompt import BaseParser, MessageSchema, ResponseSchema, template
+from .prompt import BaseParser, MessageSchema, ResponseSchema, generate_prompt_inputs
+from .strings import template
 
 
 class MessageParser:
     chain: Runnable
+    base_parser: BaseParser
     fixing_parser: OutputFixingParser
     debug: bool
     semaphore: Semaphore
@@ -26,7 +28,7 @@ class MessageParser:
         self.semaphore = Semaphore(self.max_concurrent_prompts)
         langchain.debug = self.debug  # pyright: ignore
 
-        base_parser = BaseParser()
+        self.base_parser = BaseParser()
         llm = OllamaLLM(
             model="llama3.1:8b",
             base_url="http://localhost:11434",
@@ -75,39 +77,54 @@ class MessageParser:
 
         prompt = PromptTemplate(
             template=template,
-            input_variables=["conversation", "subject", "timestamp", "format_instructions"],
-            partial_variables={
-                "format_instructions": base_parser.get_format_instructions(),
-            },
+            input_variables=[
+                "conversation",
+                "subject",
+                "timestamp",
+                "task",
+                "template_multiple",
+                "template_forward",
+                "format_instructions",
+                "forward_format1",
+                "forward_format2",
+            ],
         )
         self.chain = prompt | llm
         self.fixing_parser = OutputFixingParser.from_llm(
-            parser=base_parser, llm=llm_retry, max_retries=2
+            parser=self.base_parser, llm=llm_retry, max_retries=2
         )
 
     def get_concurrent_prompts(self) -> int:
         return self.max_concurrent_prompts - self.semaphore._value
 
     async def parse_messages(
-        self, conversation: str, subject: str, timestamp: datetime
+        self,
+        conversation: str,
+        subject: str,
+        timestamp: datetime,
+        reply_candidate: bool,
+        forward_candidate: bool,
     ) -> ResponseSchema:
         async with self.semaphore:
-            inputs = {
-                "conversation": conversation,
-                "subject": subject,
-                "timestamp": timestamp.strftime("%Y-%m-%dT%H:%M"),
-            }
+            inputs = generate_prompt_inputs(
+                conversation,
+                subject,
+                timestamp,
+                reply_candidate,
+                forward_candidate,
+            )
             output = await self.chain.ainvoke(inputs)
 
             try:
                 parsed: ResponseSchema = await self.fixing_parser.ainvoke(output)
                 if len(parsed.messages) == 1:
                     parsed.messages[0].timestamp = timestamp
+
                 print("Message extraction successful")
                 if self.debug:
                     for i, msg in enumerate(parsed.messages):
                         print(
-                            f"Message {"(forwarded) " if parsed.forwarded else ""}{i+1} from {msg.author} at {msg.timestamp}:\n{msg.content}\n"
+                            f"Message {'(forwarded) ' if parsed.forwarded else ''}{i + 1} from {msg.author} at {msg.timestamp}:\n{msg.content}\n"
                         )
                 return parsed
             except OutputParserException:
@@ -120,6 +137,4 @@ class MessageParser:
                             timestamp=timestamp,
                         ),
                     ],
-                    forwarded=False,
-                    forwarded_by=None,
                 )

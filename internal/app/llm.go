@@ -18,6 +18,14 @@ type LLM struct {
 	config *cfg.LLMConfig
 }
 
+type ParseMessagesRequest struct {
+	Conversation     string `json:"conversation"`
+	Subject          string `json:"subject"`
+	Timestamp        string `json:"timestamp"`
+	ReplyCandidate   bool   `json:"reply_candidate"`
+	ForwardCandidate bool   `json:"forward_candidate"`
+}
+
 func (llm *LLM) apiRequest(endpoint string, body []byte) ([]byte, error) {
 	resp, err := http.Post(
 		llm.config.ApiUrl+"/"+endpoint,
@@ -39,10 +47,12 @@ func (llm *LLM) apiRequest(endpoint string, body []byte) ([]byte, error) {
 }
 
 func (llm *LLM) ExtractMessages(mail *model.Mail) {
-	data := map[string]string{
-		"conversation": *mail.Body,
-		"subject":      mail.Subject,
-		"timestamp":    mail.Timestamp.Time.Format("2006-01-02T15:04"),
+	data := ParseMessagesRequest{
+		Conversation:     *mail.Body,
+		Subject:          mail.Subject,
+		Timestamp:        mail.Timestamp.Time.Format("2006-01-02T15:04"),
+		ReplyCandidate:   mail.HeaderInReplyTo != "",
+		ForwardCandidate: mail.HeaderReferences != nil && len(mail.HeaderReferences) != 0,
 	}
 	encoded, err := json.Marshal(data)
 	if err != nil {
