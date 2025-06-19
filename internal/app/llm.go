@@ -52,7 +52,7 @@ func (llm *LLM) ExtractMessages(mail *model.Mail) {
 		Subject:          mail.Subject,
 		Timestamp:        mail.Timestamp.Time.Format("2006-01-02T15:04"),
 		ReplyCandidate:   mail.HeaderInReplyTo != "",
-		ForwardCandidate: mail.HeaderReferences != nil && len(mail.HeaderReferences) != 0,
+		ForwardCandidate: mail.HeaderReferences != nil && len(mail.HeaderReferences) != 0 && mail.HeaderInReplyTo == "",
 	}
 	encoded, err := json.Marshal(data)
 	if err != nil {
