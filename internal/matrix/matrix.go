@@ -15,14 +15,13 @@ import (
 
 type MatrixHandler struct {
 	client *MatrixClient
-	config *config.MatrixConfig
+	Config *config.MatrixConfig
 }
 
-func (mh *MatrixHandler) Setup(cfg *config.Config, actions Actions, wg *sync.WaitGroup) {
+func (mh *MatrixHandler) Setup(actions Actions, wg *sync.WaitGroup) {
 	defer wg.Done()
-	mh.config = cfg.Matrix
-	mh.client = &MatrixClient{}
-	mh.client.Login(cfg, actions)
+	mh.client = &MatrixClient{Config: mh.Config}
+	mh.client.Login(actions)
 	go mh.client.Sync()
 }
 
@@ -40,7 +39,7 @@ func (mh *MatrixHandler) WaitForRoomJoins() {
 func (mh *MatrixHandler) matchRoomsRegexps(regexps map[*regexp.Regexp]string, s string) string {
 	for regex, room := range regexps {
 		if regex.MatchString(s) {
-			log.Infof("Using matrix room %v for: %v", mh.config.AliasOfRoom(room), s)
+			log.Infof("Using matrix room %v for: %v", mh.Config.AliasOfRoom(room), s)
 			return room
 		}
 	}
@@ -52,18 +51,18 @@ func (mh *MatrixHandler) determineMatrixRoom(
 ) string {
 	// check criteria in order: to > fetcher > from
 	for _, addr := range addrTo {
-		if room := mh.matchRoomsRegexps(mh.config.RoomsAddrToRegex, addr); room != "" {
+		if room := mh.matchRoomsRegexps(mh.Config.RoomsAddrToRegex, addr); room != "" {
 			return room
 		}
 	}
-	if room := mh.matchRoomsRegexps(mh.config.RoomsMailboxRegex, fetcher); room != "" {
+	if room := mh.matchRoomsRegexps(mh.Config.RoomsMailboxRegex, fetcher); room != "" {
 		return room
 	}
-	if room := mh.matchRoomsRegexps(mh.config.RoomsAddrFromRegex, addrFrom); room != "" {
+	if room := mh.matchRoomsRegexps(mh.Config.RoomsAddrFromRegex, addrFrom); room != "" {
 		return room
 	}
 	log.Infof("Using default matrix room for: to=%v from=%v mailbox=%v", addrTo, addrFrom, fetcher)
-	return mh.config.DefaultRoom.String()
+	return mh.Config.DefaultRoom.String()
 }
 
 func (mh *MatrixHandler) CreateThread(
@@ -129,7 +128,7 @@ func (mh *MatrixHandler) UpdateThreadOverview(
 	nAuthors := len(authors)
 
 	for i := range nAuthors {
-		link := formatMessageLink(rooms[i], threadMsgs[i], mh.config.HomeServer)
+		link := formatMessageLink(rooms[i], threadMsgs[i], mh.Config.HomeServer)
 		textTitle, htlmTitle := formatAttribute(authors[i], subjects[i])
 		textLine := fmt.Sprintf("%s - %s", textTitle, link)
 		htmlLine := fmt.Sprintf("%s - %s", htlmTitle, link)

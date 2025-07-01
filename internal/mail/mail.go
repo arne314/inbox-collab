@@ -13,33 +13,32 @@ var mailboxUpdateMutex sync.RWMutex
 
 type MailHandler struct {
 	fetchers          []*MailFetcher
-	config            *config.MailConfig
+	Config            *config.MailConfig
 	fetchedMails      chan []*Mail
 	lastMailboxUpdate time.Time
 	StateStorage      FetcherStateStorage
 }
 
 func (mh *MailHandler) Setup(
-	globalCfg *config.MailConfig, wg *sync.WaitGroup,
+	wg *sync.WaitGroup,
 	fetchedMails chan []*Mail, stateStorage FetcherStateStorage,
 ) {
 	defer wg.Done()
 	var waitGroup sync.WaitGroup
-	mh.config = globalCfg
 	mh.fetchedMails = fetchedMails
 	mh.StateStorage = stateStorage
 
-	for name, cfg := range globalCfg.Sources {
+	for name, cfg := range mh.Config.Sources {
 		for _, mailbox := range cfg.Mailboxes {
 			var fetcherName string
-			if globalCfg.ListMailboxes {
+			if mh.Config.ListMailboxes {
 				fetcherName = name
 			} else {
 				fetcherName = fmt.Sprintf("%s:%s", name, mailbox)
 			}
 			fetcher := NewMailFetcher(
 				fetcherName, mailbox, cfg,
-				globalCfg, mh, fetchedMails,
+				mh.Config, mh, fetchedMails,
 			)
 			waitGroup.Add(1)
 			go func(f *MailFetcher) {
@@ -47,7 +46,7 @@ func (mh *MailHandler) Setup(
 				waitGroup.Done()
 			}(fetcher)
 			mh.fetchers = append(mh.fetchers, fetcher)
-			if globalCfg.ListMailboxes { // only one fetcher per mail server
+			if mh.Config.ListMailboxes { // only one fetcher per mail server
 				break
 			}
 		}
@@ -67,7 +66,7 @@ func (mh *MailHandler) GetLastMailboxUpdate() time.Time {
 }
 
 func (mh *MailHandler) Run() {
-	if mh.config.ListMailboxes {
+	if mh.Config.ListMailboxes {
 		return
 	}
 	for _, fetcher := range mh.fetchers {

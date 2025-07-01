@@ -85,7 +85,7 @@ func (ic *InboxCollab) setupThreadSortingStage() {
 				continue
 			}
 			headAllowed := true
-			for _, regex := range ic.config.Matrix.HeadBlacklistRegex {
+			for _, regex := range ic.Config.Matrix.HeadBlacklistRegex {
 				if regex.MatchString(mail.AddrFrom) {
 					headAllowed = false
 					log.Infof("Ignoring mail as thread head from %v", mail.AddrFrom)
@@ -111,12 +111,12 @@ func (ic *InboxCollab) setupThreadSortingStage() {
 func (ic *InboxCollab) setupMatrixNotificationsStage() {
 	setup := func() {
 		ic.dbHandler.AddAllRooms()
-		if !ic.config.Matrix.VerifySession {
+		if !ic.Config.Matrix.VerifySession {
 			ic.matrixHandler.WaitForRoomJoins()
 		}
 	}
 	work := func() bool {
-		if ic.config.Matrix.VerifySession {
+		if ic.Config.Matrix.VerifySession {
 			return true
 		}
 		touchedRooms := []string{}
@@ -163,7 +163,7 @@ func (ic *InboxCollab) setupMatrixNotificationsStage() {
 func (ic *InboxCollab) QueueMatrixOverviewUpdate(touchedRooms []string) {
 	notify := make(map[string]bool)
 	for _, target := range touchedRooms {
-		for _, room := range ic.config.Matrix.GetOverviewRooms(target) {
+		for _, room := range ic.Config.Matrix.GetOverviewRooms(target) {
 			if _, ok := notify[room]; !ok {
 				notify[room] = true
 			}
@@ -179,7 +179,7 @@ func (ic *InboxCollab) QueueMatrixOverviewUpdate(touchedRooms []string) {
 func (ic *InboxCollab) setupMatrixOverviewStage() {
 	genWork := func(roomId string) func() bool {
 		return func() bool {
-			if ic.config.Matrix.VerifySession {
+			if ic.Config.Matrix.VerifySession {
 				return true
 			}
 			messageId, authors, subjects, rooms, threadMsgs := ic.dbHandler.GetOverviewThreads(
@@ -197,9 +197,9 @@ func (ic *InboxCollab) setupMatrixOverviewStage() {
 		}
 	}
 	MatrixOverviewStages = make(map[string]*PipelineStage)
-	for _, overviewRoom := range ic.config.Matrix.AllOverviewRooms() {
+	for _, overviewRoom := range ic.Config.Matrix.AllOverviewRooms() {
 		MatrixOverviewStages[overviewRoom] = NewStage(
-			fmt.Sprintf("MatrixOverview[%s]", ic.config.Matrix.AliasOfRoom(overviewRoom)),
+			fmt.Sprintf("MatrixOverview[%s]", ic.Config.Matrix.AliasOfRoom(overviewRoom)),
 			nil, genWork(overviewRoom), true,
 		)
 	}

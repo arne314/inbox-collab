@@ -23,7 +23,7 @@ var (
 )
 
 type InboxCollab struct {
-	config        *cfg.Config
+	Config        *cfg.Config
 	dbHandler     *db.DbHandler
 	matrixHandler *matrix.MatrixHandler
 	mailHandler   *mail.MailHandler
@@ -46,26 +46,24 @@ func (f FetcherStateStorageImpl) SaveState(id string, uidLast uint32, uidValidit
 }
 
 func (ic *InboxCollab) Setup(
-	config *cfg.Config,
 	dbHandler *db.DbHandler,
 	mailHandler *mail.MailHandler,
 	matrixHandler *matrix.MatrixHandler,
 ) {
-	ic.config = config
 	ic.dbHandler = dbHandler
 	ic.mailHandler = mailHandler
 	ic.matrixHandler = matrixHandler
-	ic.llm = &LLM{config: config.LLM}
+	ic.llm = &LLM{config: ic.Config.LLM}
 	ic.fetchedMails = make(chan []*mail.Mail, 100)
-	if !config.Matrix.VerifySession {
+	if !ic.Config.Matrix.VerifySession {
 		waitGroup.Add(1)
-		go mailHandler.Setup(config.Mail, waitGroup, ic.fetchedMails, FetcherStateStorageImpl{
+		go mailHandler.Setup(waitGroup, ic.fetchedMails, FetcherStateStorageImpl{
 			getState:  dbHandler.GetMailFetcherState,
 			saveState: dbHandler.UpdateMailFetcherState,
 		})
 	}
 	waitGroup.Add(1)
-	go matrixHandler.Setup(config, ic, waitGroup)
+	go matrixHandler.Setup(ic, waitGroup)
 	waitGroup.Wait()
 	ic.setupMessageExtractionStage()
 	ic.setupThreadSortingStage()
@@ -130,7 +128,7 @@ func (ic *InboxCollab) ForceCloseThread(roomId string, threadId string) bool {
 
 func (ic *InboxCollab) ResendThreadOverview(roomId string) bool {
 	ok := false
-	if !slices.Contains(ic.config.Matrix.AllOverviewRooms(), roomId) {
+	if !slices.Contains(ic.Config.Matrix.AllOverviewRooms(), roomId) {
 		return false
 	}
 	room := ic.dbHandler.GetRoom(roomId)
@@ -145,7 +143,7 @@ func (ic *InboxCollab) ResendThreadOverview(roomId string) bool {
 
 func (ic *InboxCollab) ResendThreadOverviewAll() bool {
 	ok := true
-	rooms := ic.config.Matrix.AllOverviewRooms()
+	rooms := ic.Config.Matrix.AllOverviewRooms()
 	for _, roomId := range rooms {
 		room := ic.dbHandler.GetRoom(roomId)
 		if room != nil {
@@ -160,7 +158,7 @@ func (ic *InboxCollab) ResendThreadOverviewAll() bool {
 }
 
 func (ic *InboxCollab) Run() {
-	if ic.config.Mail.ListMailboxes || ic.config.Matrix.VerifySession {
+	if ic.Config.Mail.ListMailboxes || ic.Config.Matrix.VerifySession {
 		return
 	}
 	go ic.storeMails()

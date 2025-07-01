@@ -15,19 +15,23 @@ import (
 )
 
 var (
-	waitGroup     *sync.WaitGroup       = &sync.WaitGroup{}
-	config        *cfg.Config           = &cfg.Config{}
-	dbHandler     *db.DbHandler         = &db.DbHandler{}
-	matrixHandler *matrix.MatrixHandler = &matrix.MatrixHandler{}
-	mailHandler   *mail.MailHandler     = &mail.MailHandler{}
-	inboxCollab   *app.InboxCollab      = &app.InboxCollab{}
+	waitGroup     *sync.WaitGroup = &sync.WaitGroup{}
+	config        *cfg.Config     = &cfg.Config{}
+	dbHandler     *db.DbHandler
+	inboxCollab   *app.InboxCollab
+	matrixHandler *matrix.MatrixHandler
+	mailHandler   *mail.MailHandler
 )
 
 func main() {
 	log.Info("Starting inbox-collab...")
 	config.Load()
-	dbHandler.Setup(config)
-	inboxCollab.Setup(config, dbHandler, mailHandler, matrixHandler)
+	dbHandler = &db.DbHandler{Config: config}
+	inboxCollab = &app.InboxCollab{Config: config}
+	mailHandler = &mail.MailHandler{Config: config.Mail}
+	matrixHandler = &matrix.MatrixHandler{Config: config.Matrix}
+	dbHandler.Setup()
+	inboxCollab.Setup(dbHandler, mailHandler, matrixHandler)
 
 	go mailHandler.Run()
 	go inboxCollab.Run()

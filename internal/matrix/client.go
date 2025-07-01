@@ -23,7 +23,7 @@ import (
 )
 
 type MatrixClient struct {
-	config             *config.MatrixConfig
+	Config             *config.MatrixConfig
 	client             *mautrix.Client
 	cancelSync         context.CancelFunc
 	cryptoHelper       *cryptohelper.CryptoHelper
@@ -93,21 +93,20 @@ func (mc *MatrixClient) ShowSAS(
 	}()
 }
 
-func (mc *MatrixClient) Login(cfg *config.Config, actions Actions) {
-	mc.config = cfg.Matrix
-	client, err := mautrix.NewClient(mc.config.HomeServer, "", "")
+func (mc *MatrixClient) Login(actions Actions) {
+	client, err := mautrix.NewClient(mc.Config.HomeServer, "", "")
 	client.DefaultHTTPRetries = 3
 	// client.Log = zerolog.New(os.Stdout).With().Timestamp().Logger()
 	if err != nil {
 		log.Fatalf("Invalid matrix config: %v", err)
 	}
 	mc.client = client
-	mc.commandHandler = NewCommandHandler(mc.config, actions, mc)
+	mc.commandHandler = NewCommandHandler(mc.Config, actions, mc)
 	syncer := client.Syncer.(*mautrix.DefaultSyncer)
 
 	// listen for messages
 	syncer.OnEventType(event.EventMessage, func(ctx context.Context, evt *event.Event) {
-		if sender := evt.Sender.String(); sender != mc.config.Username {
+		if sender := evt.Sender.String(); sender != mc.Config.Username {
 			log.Infof("Received message\nSender: %s\nType: %s\nID: %s\nBody: %s\n",
 				sender, evt.Type.String(), evt.ID.String(), evt.Content.AsMessage().Body,
 			)
@@ -119,7 +118,7 @@ func (mc *MatrixClient) Login(cfg *config.Config, actions Actions) {
 		// accept room invites
 		if evt.GetStateKey() == client.UserID.String() &&
 			evt.Content.AsMember().Membership == event.MembershipInvite {
-			validRoom := slices.Contains(mc.config.AllRooms(), evt.RoomID.String())
+			validRoom := slices.Contains(mc.Config.AllRooms(), evt.RoomID.String())
 			if !validRoom {
 				log.Warnf("Rejecting invite to room not mentioned in the config: %v", evt.RoomID)
 				return
@@ -174,9 +173,9 @@ func (mc *MatrixClient) Login(cfg *config.Config, actions Actions) {
 		Type: mautrix.AuthTypePassword,
 		Identifier: mautrix.UserIdentifier{
 			Type: mautrix.IdentifierTypeUser,
-			User: mc.config.Username,
+			User: mc.Config.Username,
 		},
-		Password:                 mc.config.Password,
+		Password:                 mc.Config.Password,
 		InitialDeviceDisplayName: "inbox-collab",
 	}
 	err = cryptoHelper.Init(context.Background())
@@ -194,7 +193,7 @@ func (mc *MatrixClient) Login(cfg *config.Config, actions Actions) {
 		log.Fatalf("Error setting up verification helper: %v", err)
 	}
 	mc.verificationHelper = verificationHelper
-	mc.autoVerifySession = mc.config.VerifySession
+	mc.autoVerifySession = mc.Config.VerifySession
 	log.Info("Logged into matrix")
 }
 
@@ -204,7 +203,7 @@ func (mc *MatrixClient) ValidateRooms() (ok bool, missing string) {
 		log.Errorf("Error fetching joined rooms: %v", err)
 		return true, ""
 	}
-	for _, room := range mc.config.AllRooms() {
+	for _, room := range mc.Config.AllRooms() {
 		member := false
 		for _, j := range joined.JoinedRooms {
 			if j.String() == room {

@@ -15,21 +15,20 @@ import (
 )
 
 type DbHandler struct {
+	Config  *config.Config
 	pool    *pgxpool.Pool
 	queries *db.Queries
-	config  *config.Config
 }
 
-func (dh *DbHandler) Setup(cfg *config.Config) {
+func (dh *DbHandler) Setup() {
 	ctx := context.Background()
-	pool, err := pgxpool.New(ctx, cfg.DatabaseUrl)
+	pool, err := pgxpool.New(ctx, dh.Config.DatabaseUrl)
 	if err != nil {
 		log.Fatalf("Failed to connect to database: %v", err)
 		return
 	}
 	dh.pool = pool
 	dh.queries = db.New(pool)
-	dh.config = cfg
 	mailCount, err := dh.queries.MailCount(ctx)
 	if err != nil {
 		log.Errorf("Error counting mails: %v", err)
@@ -294,7 +293,7 @@ func (dh *DbHandler) UpdateThreadEnabled(
 
 func (dh *DbHandler) AddAllRooms() {
 	ctx := context.Background()
-	for _, room := range dh.config.Matrix.AllRooms() {
+	for _, room := range dh.Config.Matrix.AllRooms() {
 		err := dh.queries.AddRoom(ctx, room)
 		if err != nil {
 			log.Errorf("Error adding room to db: %v", err)
@@ -336,7 +335,7 @@ func (dh *DbHandler) GetOverviewThreads(
 	}
 	messageId = room.OverviewMessageID.String
 
-	targets := dh.config.Matrix.GetOverviewRoomTargets(overviewRoom)
+	targets := dh.Config.Matrix.GetOverviewRoomTargets(overviewRoom)
 	threads, err := dh.queries.GetOverviewThreads(ctx, targets)
 	if err != nil {
 		log.Errorf("Error reading overview room %v from db: %v", overviewRoom, err)
