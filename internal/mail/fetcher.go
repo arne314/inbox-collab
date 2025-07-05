@@ -1,9 +1,12 @@
 package mail
 
 import (
+	"context"
 	"fmt"
 	"regexp"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/emersion/go-imap/v2"
@@ -40,21 +43,25 @@ type FetcherStateStorage interface {
 }
 
 type MailFetcher struct {
-	name          string
-	mailbox       string
-	config        *config.MailSourceConfig
-	globalConfig  *config.MailConfig
-	client        *imapclient.Client
-	idleCommand   *imapclient.IdleCommand
-	isIdle        bool
-	nameFromRegex *regexp.Regexp
-	addressRegex  *regexp.Regexp
-	idRegex       *regexp.Regexp
+	name           string
+	mailbox        string
+	config         *config.MailSourceConfig
+	globalConfig   *config.MailConfig
+	client         *imapclient.Client
+	idleCommand    *imapclient.IdleCommand
+	isIdle         bool
+	idleMutex      sync.Mutex
+	isReconnecting atomic.Bool
+	nameFromRegex  *regexp.Regexp
+	addressRegex   *regexp.Regexp
+	idRegex        *regexp.Regexp
 
 	uidLast     uint32
 	uidValidity uint32
 	mailHandler *MailHandler
 
+	ctx              context.Context
+	cancel           context.CancelFunc
 	fetchingRequired chan struct{}
 	fetchedMails     chan []*Mail
 }
@@ -85,9 +92,9 @@ func NewMailFetcher(
 	return mailfetcher
 }
 
-func (mf *MailFetcher) FetchMessages() []*Mail {
-	mf.RevokeIdle()
-	defer mf.Idle()
+func (mf *MailFetcher) fetchMessages() []*Mail {
+	mf.revokeIdle()
+	defer mf.idle()
 
 	searchCriteria := &imap.SearchCriteria{
 		SentSince: time.Now().AddDate(0, 0, -mf.globalConfig.MaxAge),
@@ -146,34 +153,136 @@ func (mf *MailFetcher) FetchMessages() []*Mail {
 	return mails
 }
 
-func (mf *MailFetcher) Idle() {
-	if !mf.isIdle {
-		cmd, err := mf.client.Idle()
-		if err != nil {
-			log.Fatalf("Error going idle with MailFetcher %v: %v", mf.name, err)
-		}
-		mf.idleCommand = cmd
-		log.Infof("MailFetcher %v is now in idle", mf.name)
+func (mf *MailFetcher) idle() bool {
+	if mf.isIdle {
+		return true
 	}
+	mf.idleMutex.Lock()
+	defer mf.idleMutex.Unlock()
+	cmd, err := mf.client.Idle()
+	if err != nil {
+		log.Errorf("Error going idle with MailFetcher %v: %v", mf.name, err)
+		mf.isIdle = false
+		time.Sleep(3 * time.Second)
+		mf.reconnect()
+		return false
+	}
+	mf.idleCommand = cmd
+	log.Infof("MailFetcher %v is now in idle", mf.name)
 	mf.isIdle = true
+	return true
 }
 
-func (mf *MailFetcher) RevokeIdle() {
-	if mf.isIdle {
-		if err := mf.idleCommand.Close(); err != nil {
-			log.Errorf("Error stopping idle of MailFetcher %v, retrying in 5s...", mf.name)
-			time.Sleep(5 * time.Second)
-			mf.RevokeIdle()
-		}
+func (mf *MailFetcher) revokeIdle() bool {
+	if !mf.isIdle {
+		return true
 	}
 	mf.isIdle = false
+	if err := mf.idleCommand.Close(); err != nil {
+		log.Errorf("Error stopping idle of MailFetcher %v, retrying in 5s: %v", mf.name, err)
+		time.Sleep(3 * time.Second)
+		if err = mf.idleCommand.Close(); err != nil {
+			log.Errorf("Error stopping idle of MailFetcher %v, reconnecting: %v", mf.name, err)
+			mf.reconnect()
+			return false
+		}
+	}
 	log.Infof("MailFetcher %v stopped idle", mf.name)
+	return true
 }
 
-func (mf *MailFetcher) Login() {
+func runWithHardTimeout(timeout time.Duration, fn func() error) error {
+	done := make(chan error, 1)
+	go func() {
+		done <- fn()
+	}()
+	select {
+	case err := <-done:
+		return err
+	case <-time.After(timeout):
+		return fmt.Errorf("timed out after %v", timeout)
+	}
+}
+
+func (mf *MailFetcher) reconnect() {
+	if !mf.isReconnecting.CompareAndSwap(false, true) {
+		return
+	}
+	defer mf.isReconnecting.Store(false)
+	done := false
+	for !done {
+		log.Infof("Reconnecting MailFetcher %v", mf.name)
+		if !mf.logout() {
+			err := mf.client.Close()
+			if err != nil {
+				log.Errorf("Error closing connection of MailFetcher %v: %v", mf.name, err)
+			}
+		}
+		err := runWithHardTimeout(30*time.Second, func() error {
+			if !mf.login() {
+				return fmt.Errorf("Error logging in MailFetcher %v", mf.name)
+			}
+			return nil
+		})
+		if err != nil {
+			log.Infof("Error reconnecting, retrying in 5s...")
+			time.Sleep(5 * time.Second)
+		} else {
+			mf.queueFetch()
+			time.Sleep(5 * time.Second)
+			done = true
+		}
+	}
+}
+
+func (mf *MailFetcher) ensureConnected(activeValidation bool) {
+	state := mf.client.State()
+	if state != imap.ConnStateSelected && state != imap.ConnStateAuthenticated {
+		mf.reconnect()
+	}
+	if activeValidation {
+		if mf.revokeIdle() {
+			defer mf.idle()
+			err := runWithHardTimeout(10*time.Second, func() error { return mf.client.Noop().Wait() })
+			if err != nil {
+				log.Errorf("Error validating connection of MailFetcher %v: %v", mf.name, err)
+				mf.reconnect()
+			}
+		}
+	}
+}
+
+func (mf *MailFetcher) Setup() bool {
+	mf.ctx, mf.cancel = context.WithCancel(context.Background())
+	loginSuccess := mf.login()
+	startConnectionWatcher := func(active bool, interval time.Duration) {
+		for {
+			select {
+			case <-mf.ctx.Done():
+				return
+			default:
+				time.Sleep(interval)
+				mf.ensureConnected(active)
+			}
+		}
+	}
+	if loginSuccess {
+		if !mf.globalConfig.ListMailboxes {
+			go startConnectionWatcher(false, time.Minute)
+			go startConnectionWatcher(true, 20*time.Minute)
+		}
+		log.Infof("MailFetcher %v setup successfully", mf.name)
+	}
+	return loginSuccess
+}
+
+func (mf *MailFetcher) login() bool {
 	options := &imapclient.Options{
 		UnilateralDataHandler: &imapclient.UnilateralDataHandler{
 			Mailbox: func(data *imapclient.UnilateralDataMailbox) {
+				if mf.ctx.Err() != nil {
+					return
+				}
 				if data.NumMessages != nil {
 					log.Infof(
 						"MailFetcher %v received a mailbox update, now %v messages",
@@ -189,24 +298,27 @@ func (mf *MailFetcher) Login() {
 		options,
 	)
 	if err != nil {
-		log.Fatalf("Failed to create imap client: %v", err)
+		log.Errorf("Failed to create imap client: %v", err)
+		return false
 	}
 	err = client.Login(mf.config.Username, mf.config.Password).Wait()
 	if err != nil {
-		log.Fatalf("Failed to login to mailbox %v: %v", mf.name, err)
+		log.Errorf("Failed to login to mailbox %v: %v", mf.name, err)
+		return false
 	}
 	mf.client = client
 	if mf.globalConfig.ListMailboxes {
 		mf.listMailboxes()
-		return
+		return false
 	}
 	_, err = mf.uidsValid() // try to select inbox
 	if err != nil {
-		return
+		return false
 	}
-	mf.Idle()
+	mf.idle()
 	mf.saveState()
-	log.Infof("MailFetcher %v setup successfully", mf.name)
+	log.Infof("MailFetcher %v logged in successfully", mf.name)
+	return true
 }
 
 func (mf *MailFetcher) uidsValid() (bool, error) {
@@ -258,15 +370,23 @@ func (mf *MailFetcher) queueFetch() {
 func (mf *MailFetcher) StartFetching() {
 	mf.queueFetch() // initial fetch
 	for range mf.fetchingRequired {
-		mf.fetchedMails <- mf.FetchMessages()
+		mf.fetchedMails <- mf.fetchMessages()
 	}
 }
 
-func (mf *MailFetcher) Logout() {
-	mf.RevokeIdle()
-	err := mf.client.Logout().Wait()
+func (mf *MailFetcher) logout() bool {
+	mf.revokeIdle()
+	err := runWithHardTimeout(5*time.Second, func() error { return mf.client.Logout().Wait() })
 	if err != nil {
 		log.Errorf("Error logging out MailFetcher %v: %v", mf.name, err)
+		return false
 	}
 	log.Infof("MailFetcher %v logged out", mf.name)
+	return true
+}
+
+func (mf *MailFetcher) Shutdown() {
+	mf.cancel()
+	close(mf.fetchingRequired)
+	mf.logout()
 }

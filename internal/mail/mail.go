@@ -42,7 +42,9 @@ func (mh *MailHandler) Setup(
 			)
 			waitGroup.Add(1)
 			go func(f *MailFetcher) {
-				f.Login()
+				if !f.Setup() {
+					log.Panicf("Unable to connect MailFetcher %v", name)
+				}
 				waitGroup.Done()
 			}(fetcher)
 			mh.fetchers = append(mh.fetchers, fetcher)
@@ -80,7 +82,7 @@ func (mh *MailHandler) Stop(wg *sync.WaitGroup) {
 	waitGroup.Add(len(mh.fetchers))
 	for _, fetcher := range mh.fetchers {
 		go func(f *MailFetcher) {
-			f.Logout()
+			f.Shutdown()
 			waitGroup.Done()
 		}(fetcher)
 	}
