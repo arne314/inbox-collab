@@ -37,7 +37,7 @@ var (
 		"resendoverview",
 		"resendoverviewall",
 	}
-	commandRegex          *regexp.Regexp = regexp.MustCompile(`^!\s*([a-zA-Z]+)`)
+	commandRegex          *regexp.Regexp = regexp.MustCompile(`^\s*!\s*([a-zA-Z]+)`)
 	CommandStateReactions []string       = []string{"👀", "⏳", "✅", "❌"}
 	roomMutexes           map[string]*sync.Mutex
 )
