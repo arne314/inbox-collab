@@ -33,23 +33,23 @@ func main() {
 	dbHandler.Setup()
 	inboxCollab.Setup(dbHandler, mailHandler, matrixHandler)
 
-	go mailHandler.Run()
-	go inboxCollab.Run()
+	waitGroup.Add(2)
+	go mailHandler.Run(waitGroup)
+	go inboxCollab.Run(waitGroup)
 
 	stop := make(chan os.Signal, 1)
 	signal.Notify(stop, os.Interrupt)
 	log.Info("Startup complete")
 	<-stop
 	log.Info("Shutting down inbox-collab...")
-	defer shutdown()
+	shutdown()
 }
 
 func shutdown() {
-	waitGroup.Add(4)
-	go dbHandler.Stop(waitGroup)
-	go mailHandler.Stop(waitGroup)
-	go matrixHandler.Stop(waitGroup)
-	go inboxCollab.Stop(waitGroup)
+	mailHandler.Stop()
+	inboxCollab.Stop()
 	waitGroup.Wait()
+	matrixHandler.Stop()
+	dbHandler.Stop()
 	log.Info("Shutdown successful")
 }

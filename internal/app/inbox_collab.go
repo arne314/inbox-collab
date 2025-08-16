@@ -1,6 +1,7 @@
 package app
 
 import (
+	"context"
 	"slices"
 	"sync"
 
@@ -15,7 +16,6 @@ import (
 )
 
 var (
-	waitGroup               *sync.WaitGroup = &sync.WaitGroup{}
 	MessageExtractionStage  *PipelineStage
 	ThreadSortingStage      *PipelineStage
 	MatrixNotificationStage *PipelineStage
@@ -33,16 +33,16 @@ type InboxCollab struct {
 }
 
 type FetcherStateStorageImpl struct {
-	getState  func(id string) (uint32, uint32)
-	saveState func(id string, uidLast uint32, uidValidity uint32)
+	getState  func(ctx context.Context, id string) (uint32, uint32)
+	saveState func(ctx context.Context, id string, uidLast uint32, uidValidity uint32)
 }
 
-func (f FetcherStateStorageImpl) GetState(id string) (uint32, uint32) {
-	return f.getState(id)
+func (f FetcherStateStorageImpl) GetState(ctx context.Context, id string) (uint32, uint32) {
+	return f.getState(ctx, id)
 }
 
-func (f FetcherStateStorageImpl) SaveState(id string, uidLast uint32, uidValidity uint32) {
-	f.saveState(id, uidLast, uidValidity)
+func (f FetcherStateStorageImpl) SaveState(ctx context.Context, id string, uidLast uint32, uidValidity uint32) {
+	f.saveState(ctx, id, uidLast, uidValidity)
 }
 
 func (ic *InboxCollab) Setup(
@@ -55,6 +55,8 @@ func (ic *InboxCollab) Setup(
 	ic.matrixHandler = matrixHandler
 	ic.llm = &LLM{config: ic.Config.LLM}
 	ic.fetchedMails = make(chan []*mail.Mail, 100)
+
+	waitGroup := &sync.WaitGroup{}
 	if !ic.Config.Matrix.VerifySession {
 		waitGroup.Add(1)
 		go mailHandler.Setup(waitGroup, ic.fetchedMails, FetcherStateStorageImpl{
@@ -71,7 +73,9 @@ func (ic *InboxCollab) Setup(
 	ic.setupMatrixOverviewStage()
 }
 
-func (ic *InboxCollab) storeMails() {
+func (ic *InboxCollab) storeMails(waitGroup *sync.WaitGroup) {
+	defer waitGroup.Done()
+	ctx := context.Background()
 	initial := true
 	for chunk := range ic.fetchedMails {
 		modelled := make([]*model.Mail, len(chunk))
@@ -90,7 +94,7 @@ func (ic *InboxCollab) storeMails() {
 				Body:             &mail.Text,
 			}
 		}
-		nFetched := ic.dbHandler.AddMails(modelled)
+		nFetched := ic.dbHandler.AddMails(ctx, modelled)
 		if nFetched > 0 || initial {
 			log.Infof("Added %v new messages to db", nFetched)
 			MessageExtractionStage.QueueWork()
@@ -99,17 +103,17 @@ func (ic *InboxCollab) storeMails() {
 	}
 }
 
-func (ic *InboxCollab) OpenThread(roomId string, threadId string) bool {
-	ok := ic.dbHandler.UpdateThreadEnabled(roomId, threadId, true, false)
+func (ic *InboxCollab) OpenThread(ctx context.Context, roomId string, threadId string) bool {
+	ok := ic.dbHandler.UpdateThreadEnabled(ctx, roomId, threadId, true, false)
 	if ok {
 		ic.QueueMatrixOverviewUpdate([]string{roomId})
 	}
 	return ok
 }
 
-func (ic *InboxCollab) CloseThread(roomId string, threadId string) bool {
+func (ic *InboxCollab) CloseThread(ctx context.Context, roomId string, threadId string) bool {
 	ok := ic.dbHandler.UpdateThreadEnabled(
-		roomId, threadId, false,
+		ctx, roomId, threadId, false,
 		false, // force close boolean is ignored internally
 	)
 	if ok {
@@ -118,20 +122,20 @@ func (ic *InboxCollab) CloseThread(roomId string, threadId string) bool {
 	return ok
 }
 
-func (ic *InboxCollab) ForceCloseThread(roomId string, threadId string) bool {
-	ok := ic.dbHandler.UpdateThreadEnabled(roomId, threadId, false, true)
+func (ic *InboxCollab) ForceCloseThread(ctx context.Context, roomId string, threadId string) bool {
+	ok := ic.dbHandler.UpdateThreadEnabled(ctx, roomId, threadId, false, true)
 	if ok {
 		ic.QueueMatrixOverviewUpdate([]string{roomId})
 	}
 	return ok
 }
 
-func (ic *InboxCollab) ResendThreadOverview(roomId string) bool {
+func (ic *InboxCollab) ResendThreadOverview(ctx context.Context, roomId string) bool {
 	ok := false
 	if !slices.Contains(ic.Config.Matrix.AllOverviewRooms(), roomId) {
 		return false
 	}
-	room := ic.dbHandler.GetRoom(roomId)
+	room := ic.dbHandler.GetRoom(ctx, roomId)
 	if room != nil {
 		ok = ic.matrixHandler.RemoveThreadOverview(roomId, room.OverviewMessageID.String)
 		if ok {
@@ -141,11 +145,11 @@ func (ic *InboxCollab) ResendThreadOverview(roomId string) bool {
 	return ok
 }
 
-func (ic *InboxCollab) ResendThreadOverviewAll() bool {
+func (ic *InboxCollab) ResendThreadOverviewAll(ctx context.Context) bool {
 	ok := true
 	rooms := ic.Config.Matrix.AllOverviewRooms()
 	for _, roomId := range rooms {
-		room := ic.dbHandler.GetRoom(roomId)
+		room := ic.dbHandler.GetRoom(ctx, roomId)
 		if room != nil {
 			if ic.matrixHandler.RemoveThreadOverview(roomId, room.OverviewMessageID.String) {
 				MatrixOverviewStages[roomId].QueueWork()
@@ -157,19 +161,31 @@ func (ic *InboxCollab) ResendThreadOverviewAll() bool {
 	return ok
 }
 
-func (ic *InboxCollab) Run() {
+func (ic *InboxCollab) Run(waitGroup *sync.WaitGroup) {
+	defer waitGroup.Done()
 	if ic.Config.Mail.ListMailboxes || ic.Config.Matrix.VerifySession {
 		return
 	}
-	go ic.storeMails()
-	go MessageExtractionStage.Run()
-	go ThreadSortingStage.Run()
-	go MatrixNotificationStage.Run()
+	wg := &sync.WaitGroup{}
+	wg.Add(1)
+	go ic.storeMails(wg)
+	wg.Add(3)
+	go MessageExtractionStage.Run(wg)
+	go ThreadSortingStage.Run(wg)
+	go MatrixNotificationStage.Run(wg)
+	wg.Add(len(MatrixOverviewStages))
 	for _, stage := range MatrixOverviewStages {
-		go stage.Run()
+		go stage.Run(wg)
 	}
+	wg.Wait()
 }
 
-func (ic *InboxCollab) Stop(waitGroup *sync.WaitGroup) {
-	defer waitGroup.Done()
+func (ic *InboxCollab) Stop() {
+	ThreadSortingStage.Stop()
+	MessageExtractionStage.ForceStop()
+	MatrixNotificationStage.ForceStop()
+	for _, stage := range MatrixOverviewStages {
+		stage.ForceStop()
+	}
+	close(ic.fetchedMails)
 }

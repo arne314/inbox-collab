@@ -1,6 +1,7 @@
 package matrix
 
 import (
+	"context"
 	"regexp"
 	"slices"
 	"strings"
@@ -13,11 +14,11 @@ import (
 )
 
 type Actions interface {
-	OpenThread(roomId string, threadId string) bool
-	CloseThread(roomId string, threadId string) bool
-	ForceCloseThread(roomId string, threadId string) bool
-	ResendThreadOverview(roomId string) bool
-	ResendThreadOverviewAll() bool
+	OpenThread(ctx context.Context, roomId string, threadId string) bool
+	CloseThread(ctx context.Context, roomId string, threadId string) bool
+	ForceCloseThread(ctx context.Context, roomId string, threadId string) bool
+	ResendThreadOverview(ctx context.Context, roomId string) bool
+	ResendThreadOverviewAll(ctx context.Context) bool
 }
 
 type CommandState int
@@ -60,7 +61,7 @@ func (c *Command) reportState(state CommandState) {
 	log.Infof("Command state of %v changed to %v", c.Name, CommandStateReactions[c.state])
 }
 
-func (c *Command) Run() {
+func (c *Command) Run(ctx context.Context) {
 	var ok bool
 	var threadId string
 	if lock, ok := roomMutexes[c.roomId]; ok {
@@ -79,24 +80,24 @@ func (c *Command) Run() {
 		if threadId == "" {
 			ok = false
 		} else {
-			ok = c.actions.OpenThread(c.roomId, threadId)
+			ok = c.actions.OpenThread(ctx, c.roomId, threadId)
 		}
 	case "close":
 		if threadId == "" {
 			ok = false
 		} else {
-			ok = c.actions.CloseThread(c.roomId, threadId)
+			ok = c.actions.CloseThread(ctx, c.roomId, threadId)
 		}
 	case "forceclose":
 		if threadId == "" {
 			ok = false
 		} else {
-			ok = c.actions.ForceCloseThread(c.roomId, threadId)
+			ok = c.actions.ForceCloseThread(ctx, c.roomId, threadId)
 		}
 	case "resendoverview":
-		ok = c.actions.ResendThreadOverview(c.roomId)
+		ok = c.actions.ResendThreadOverview(ctx, c.roomId)
 	case "resendoverviewall":
-		ok = c.actions.ResendThreadOverviewAll()
+		ok = c.actions.ResendThreadOverviewAll(ctx)
 	default:
 		ok = false
 	}
@@ -140,7 +141,7 @@ func NewCommandHandler(
 	return &CommandHandler{Actions: actions, client: client}
 }
 
-func (ch *CommandHandler) ProcessMessage(evt *event.Event) {
+func (ch *CommandHandler) ProcessMessage(ctx context.Context, evt *event.Event) {
 	message := evt.Content.AsMessage().Body
 	parsed := commandRegex.FindStringSubmatch(message)
 	if parsed == nil {
@@ -149,6 +150,6 @@ func (ch *CommandHandler) ProcessMessage(evt *event.Event) {
 	cmd := strings.ToLower(parsed[1])
 	if slices.Contains(commands, cmd) {
 		c := NewCommand(cmd, evt, ch.client, ch.Actions)
-		go c.Run()
+		go c.Run(ctx)
 	}
 }

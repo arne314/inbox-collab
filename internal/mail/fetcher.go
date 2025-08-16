@@ -38,8 +38,8 @@ func (m *Mail) String() string {
 }
 
 type FetcherStateStorage interface {
-	GetState(id string) (uint32, uint32)
-	SaveState(id string, uidLast uint32, uidValidity uint32)
+	GetState(ctx context.Context, id string) (uint32, uint32)
+	SaveState(ctx context.Context, id string, uidLast uint32, uidValidity uint32)
 }
 
 type MailFetcher struct {
@@ -62,6 +62,7 @@ type MailFetcher struct {
 
 	ctx              context.Context
 	cancel           context.CancelFunc
+	closed           chan struct{}
 	fetchingRequired chan struct{}
 	fetchedMails     chan []*Mail
 }
@@ -74,28 +75,31 @@ func NewMailFetcher(
 	mailHandler *MailHandler,
 	fetchedMails chan []*Mail,
 ) *MailFetcher {
+	ctx, cancel := context.WithCancel(context.Background())
 	mailfetcher := &MailFetcher{
-		name:          name,
-		mailbox:       mailbox,
-		config:        config,
-		globalConfig:  globalConfig,
-		mailHandler:   mailHandler,
+		name:         name,
+		mailbox:      mailbox,
+		mailHandler:  mailHandler,
+		config:       config,
+		globalConfig: globalConfig,
+
+		fetchingRequired: make(chan struct{}, 1),
+		fetchedMails:     fetchedMails,
+		ctx:              ctx,
+		cancel:           cancel,
+		closed:           make(chan struct{}, 1),
+
 		nameFromRegex: regexp.MustCompile(`(?i)\"?\s*([^<>\" ][^<>\"]+[^<>\" ])\"?\s*<`),
 		addressRegex: regexp.MustCompile(
 			`(?i)<?([a-zA-Z0-9%+-][a-zA-Z0-9.+-_{}\(\)\[\]'"\\#\$%\^\?/=&!\*\|~]*@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})>?`,
 		),
-		idRegex:          regexp.MustCompile(`(?i)<([^@ ]+@[^@ ]+)>`),
-		fetchingRequired: make(chan struct{}, 1),
-		fetchedMails:     fetchedMails,
+		idRegex: regexp.MustCompile(`(?i)<([^@ ]+@[^@ ]+)>`),
 	}
 	mailfetcher.loadState()
 	return mailfetcher
 }
 
 func (mf *MailFetcher) fetchMessages() []*Mail {
-	mf.revokeIdle()
-	defer mf.idle()
-
 	searchCriteria := &imap.SearchCriteria{
 		SentSince: time.Now().AddDate(0, 0, -mf.globalConfig.MaxAge),
 	}
@@ -209,8 +213,10 @@ func (mf *MailFetcher) reconnect() {
 		return
 	}
 	defer mf.isReconnecting.Store(false)
-	done := false
-	for !done {
+	for {
+		if err := mf.ctx.Err(); err != nil {
+			return
+		}
 		log.Infof("Reconnecting MailFetcher %v", mf.name)
 		if !mf.logout() {
 			err := mf.client.Close()
@@ -230,7 +236,7 @@ func (mf *MailFetcher) reconnect() {
 		} else {
 			mf.queueFetch()
 			time.Sleep(5 * time.Second)
-			done = true
+			break
 		}
 	}
 }
@@ -253,15 +259,13 @@ func (mf *MailFetcher) ensureConnected(activeValidation bool) {
 }
 
 func (mf *MailFetcher) Setup() bool {
-	mf.ctx, mf.cancel = context.WithCancel(context.Background())
 	loginSuccess := mf.login()
 	startConnectionWatcher := func(active bool, interval time.Duration) {
 		for {
 			select {
 			case <-mf.ctx.Done():
 				return
-			default:
-				time.Sleep(interval)
+			case <-time.After(interval):
 				mf.ensureConnected(active)
 			}
 		}
@@ -352,12 +356,12 @@ func (mf *MailFetcher) listMailboxes() {
 }
 
 func (mf *MailFetcher) loadState() {
-	uidLast, uidValidity := mf.mailHandler.StateStorage.GetState(mf.name)
+	uidLast, uidValidity := mf.mailHandler.StateStorage.GetState(mf.ctx, mf.name)
 	mf.uidLast, mf.uidValidity = uidLast, uidValidity
 }
 
 func (mf *MailFetcher) saveState() {
-	mf.mailHandler.StateStorage.SaveState(mf.name, mf.uidLast, mf.uidValidity)
+	mf.mailHandler.StateStorage.SaveState(mf.ctx, mf.name, mf.uidLast, mf.uidValidity)
 }
 
 func (mf *MailFetcher) queueFetch() {
@@ -369,9 +373,22 @@ func (mf *MailFetcher) queueFetch() {
 
 func (mf *MailFetcher) StartFetching() {
 	mf.queueFetch() // initial fetch
-	for range mf.fetchingRequired {
-		mf.fetchedMails <- mf.fetchMessages()
+
+fetchloop:
+	for {
+		select {
+		case <-mf.ctx.Done():
+			break fetchloop
+		case <-mf.fetchingRequired:
+			mf.revokeIdle()
+			mails := mf.fetchMessages()
+			mf.fetchedMails <- mails
+			if err := mf.ctx.Err(); err == nil {
+				mf.idle()
+			}
+		}
 	}
+	mf.closed <- struct{}{}
 }
 
 func (mf *MailFetcher) logout() bool {
@@ -387,6 +404,6 @@ func (mf *MailFetcher) logout() bool {
 
 func (mf *MailFetcher) Shutdown() {
 	mf.cancel()
-	close(mf.fetchingRequired)
 	mf.logout()
+	<-mf.closed
 }

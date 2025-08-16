@@ -2,6 +2,7 @@ package app
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -26,12 +27,18 @@ type ParseMessagesRequest struct {
 	ForwardCandidate bool   `json:"forward_candidate"`
 }
 
-func (llm *LLM) apiRequest(endpoint string, body []byte) ([]byte, error) {
-	resp, err := http.Post(
+func (llm *LLM) apiRequest(ctx context.Context, endpoint string, body []byte) ([]byte, error) {
+	req, err := http.NewRequestWithContext(
+		ctx,
+		http.MethodPost,
 		llm.config.ApiUrl+"/"+endpoint,
-		"application/json",
 		bytes.NewBuffer(body),
 	)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		return nil, err
 	}
@@ -46,20 +53,20 @@ func (llm *LLM) apiRequest(endpoint string, body []byte) ([]byte, error) {
 	return data, nil
 }
 
-func (llm *LLM) ExtractMessages(mail *model.Mail) {
+func (llm *LLM) ExtractMessages(ctx context.Context, mail *model.Mail) {
 	data := ParseMessagesRequest{
 		Conversation:     *mail.Body,
 		Subject:          mail.Subject,
 		Timestamp:        mail.Timestamp.Time.Format("2006-01-02T15:04"),
 		ReplyCandidate:   mail.HeaderInReplyTo != "",
-		ForwardCandidate: mail.HeaderReferences != nil && len(mail.HeaderReferences) != 0 && mail.HeaderInReplyTo == "",
+		ForwardCandidate: len(mail.HeaderReferences) != 0 && mail.HeaderInReplyTo == "",
 	}
 	encoded, err := json.Marshal(data)
 	if err != nil {
 		log.Errorf("Error enconding json: %v", err)
 		return
 	}
-	response, err := llm.apiRequest("parse_messages", encoded)
+	response, err := llm.apiRequest(ctx, "parse_messages", encoded)
 	if err != nil {
 		log.Errorf("Error requesting llm api: %v", err)
 		return

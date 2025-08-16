@@ -67,7 +67,8 @@ func (mh *MailHandler) GetLastMailboxUpdate() time.Time {
 	return mh.lastMailboxUpdate
 }
 
-func (mh *MailHandler) Run() {
+func (mh *MailHandler) Run(waitGroup *sync.WaitGroup) {
+	defer waitGroup.Done()
 	if mh.Config.ListMailboxes {
 		return
 	}
@@ -76,15 +77,14 @@ func (mh *MailHandler) Run() {
 	}
 }
 
-func (mh *MailHandler) Stop(wg *sync.WaitGroup) {
-	defer wg.Done()
-	var waitGroup sync.WaitGroup
-	waitGroup.Add(len(mh.fetchers))
+func (mh *MailHandler) Stop() {
+	var wg sync.WaitGroup
+	wg.Add(len(mh.fetchers))
 	for _, fetcher := range mh.fetchers {
 		go func(f *MailFetcher) {
 			f.Shutdown()
-			waitGroup.Done()
+			wg.Done()
 		}(fetcher)
 	}
-	waitGroup.Wait()
+	wg.Wait()
 }

@@ -4,7 +4,7 @@ import (
 	"context"
 	"regexp"
 	"strings"
-	"sync"
+	"time"
 
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -16,6 +16,7 @@ import (
 
 type DbHandler struct {
 	Config  *config.Config
+	ctx     context.Context
 	pool    *pgxpool.Pool
 	queries *db.Queries
 }
@@ -41,10 +42,18 @@ func (dh *DbHandler) Setup() {
 	)
 }
 
-func (dh *DbHandler) AddMails(mails []*db.Mail) int {
+const dbTimeout = 200 * time.Second
+
+func defaultContext(ctx context.Context) (context.Context, context.CancelFunc) {
+	return context.WithTimeout(ctx, dbTimeout)
+}
+
+func (dh *DbHandler) AddMails(ctx context.Context, mails []*db.Mail) int {
 	count := 0
 	for _, mail := range mails {
-		inserted, err := dh.queries.AddMail(context.Background(), db.AddMailParams{
+		ctxAdd, cancelAdd := defaultContext(ctx)
+		defer cancelAdd()
+		inserted, err := dh.queries.AddMail(ctxAdd, db.AddMailParams{
 			Fetcher:          mail.Fetcher,
 			HeaderID:         mail.HeaderID,
 			HeaderInReplyTo:  mail.HeaderInReplyTo,
@@ -57,17 +66,19 @@ func (dh *DbHandler) AddMails(mails []*db.Mail) int {
 			Subject:          mail.Subject,
 			Body:             mail.Body,
 		})
-		if err != nil {
+		if err == nil {
+			count += len(inserted)
+		} else {
 			log.Errorf("Error adding mail to db: %v", err)
-			break
 		}
-		count += len(inserted)
 	}
 	return count
 }
 
-func (dh *DbHandler) GetMailById(id int64) *db.GetMailRow {
-	mail, err := dh.queries.GetMail(context.Background(), id)
+func (dh *DbHandler) GetMailById(ctx context.Context, id int64) *db.GetMailRow {
+	ctx, cancel := defaultContext(ctx)
+	defer cancel()
+	mail, err := dh.queries.GetMail(ctx, id)
 	if err != nil {
 		log.Errorf("Failed to fetch mail by id %v: %v", id, err)
 		return nil
@@ -77,8 +88,10 @@ func (dh *DbHandler) GetMailById(id int64) *db.GetMailRow {
 
 type getMailsQuery func(ctx context.Context) ([]*db.Mail, error)
 
-func getMails(query getMailsQuery, mailTypeLogMsg string) []*db.Mail {
-	mails, err := query(context.Background())
+func getMails(ctx context.Context, query getMailsQuery, mailTypeLogMsg string) []*db.Mail {
+	ctx, cancel := defaultContext(ctx)
+	defer cancel()
+	mails, err := query(ctx)
 	if err != nil {
 		log.Errorf("Error fetching mails %v: %v", mailTypeLogMsg, err)
 		return []*db.Mail{}
@@ -87,17 +100,23 @@ func getMails(query getMailsQuery, mailTypeLogMsg string) []*db.Mail {
 	return mails
 }
 
-func (dh *DbHandler) GetMailsRequiringMessageExtraction() []*db.Mail {
-	return getMails(dh.queries.GetMailsRequiringMessageExtraction, "requiring message extraction")
+func (dh *DbHandler) GetMailsRequiringMessageExtraction(ctx context.Context) []*db.Mail {
+	ctx, cancel := defaultContext(ctx)
+	defer cancel()
+	return getMails(ctx, dh.queries.GetMailsRequiringMessageExtraction, "requiring message extraction")
 }
 
-func (dh *DbHandler) GetMailsRequiringSorting() []*db.Mail {
-	return getMails(dh.queries.GetMailsRequiringSorting, "requiring sorting")
+func (dh *DbHandler) GetMailsRequiringSorting(ctx context.Context) []*db.Mail {
+	ctx, cancel := defaultContext(ctx)
+	defer cancel()
+	return getMails(ctx, dh.queries.GetMailsRequiringSorting, "requiring sorting")
 }
 
-func (dh *DbHandler) UpdateExtractedMessages(mail *db.Mail) {
+func (dh *DbHandler) UpdateExtractedMessages(ctx context.Context, mail *db.Mail) {
+	ctx, cancel := defaultContext(ctx)
+	defer cancel()
 	err := dh.queries.UpdateExtractedMessages(
-		context.Background(),
+		ctx,
 		db.UpdateExtractedMessagesParams{
 			ID:       mail.ID,
 			Messages: mail.Messages,
@@ -110,8 +129,10 @@ func (dh *DbHandler) UpdateExtractedMessages(mail *db.Mail) {
 	log.Infof("Updated extracted messages of mail %v", mail.ID)
 }
 
-func (dh *DbHandler) AutoUpdateMailSorting() {
-	count, err := dh.queries.AutoUpdateMailReplyTo(context.Background())
+func (dh *DbHandler) AutoUpdateMailSorting(ctx context.Context) {
+	ctx, cancel := defaultContext(ctx)
+	defer cancel()
+	count, err := dh.queries.AutoUpdateMailReplyTo(ctx)
 	if err != nil {
 		log.Errorf("Error auto updating reply_to columns: %v", err)
 		return
@@ -119,8 +140,10 @@ func (dh *DbHandler) AutoUpdateMailSorting() {
 	log.Infof("Auto updated %v mail reply_to columns", count)
 }
 
-func (dh *DbHandler) GetReferencedThreadParent(mail *db.Mail) *db.GetReferencedThreadParentRow {
-	rows, err := dh.queries.GetReferencedThreadParent(context.Background(), mail.HeaderReferences)
+func (dh *DbHandler) GetReferencedThreadParent(ctx context.Context, mail *db.Mail) *db.GetReferencedThreadParentRow {
+	ctx, cancel := defaultContext(ctx)
+	defer cancel()
+	rows, err := dh.queries.GetReferencedThreadParent(ctx, mail.HeaderReferences)
 	if err != nil {
 		log.Errorf("Error getting referenced thread parent for mail %v: %v", mail.ID, err)
 		return nil
@@ -131,16 +154,20 @@ func (dh *DbHandler) GetReferencedThreadParent(mail *db.Mail) *db.GetReferencedT
 	return rows[0]
 }
 
-func (dh *DbHandler) CreateThread(mail *db.Mail) {
+func (dh *DbHandler) CreateThread(ctx context.Context, mail *db.Mail) {
+	ctx1, cancel1 := defaultContext(ctx)
+	defer cancel1()
 	thread, err := dh.queries.AddThread(
-		context.Background(),
+		ctx1,
 		pgtype.Int8{Int64: mail.ID, Valid: true},
 	)
 	if err != nil {
 		log.Errorf("Error creating new thread for mail %v: %v", mail.ID, err)
 		return
 	}
-	err = dh.queries.UpdateMailSorting(context.Background(), db.UpdateMailSortingParams{
+	ctx2, cancel2 := defaultContext(ctx)
+	defer cancel2()
+	err = dh.queries.UpdateMailSorting(ctx2, db.UpdateMailSortingParams{
 		ID:      mail.ID,
 		Thread:  pgtype.Int8{Int64: thread.ID, Valid: true},
 		ReplyTo: mail.ReplyTo,
@@ -152,8 +179,10 @@ func (dh *DbHandler) CreateThread(mail *db.Mail) {
 	log.Infof("Created new thread with mail %v", mail.ID)
 }
 
-func (dh *DbHandler) AddMailToThread(mail *db.Mail, threadId int64) {
-	err := dh.queries.UpdateMailSorting(context.Background(), db.UpdateMailSortingParams{
+func (dh *DbHandler) AddMailToThread(ctx context.Context, mail *db.Mail, threadId int64) {
+	ctx1, cancel1 := defaultContext(ctx)
+	defer cancel1()
+	err := dh.queries.UpdateMailSorting(ctx1, db.UpdateMailSortingParams{
 		ID:      mail.ID,
 		Thread:  pgtype.Int8{Int64: threadId, Valid: true},
 		ReplyTo: mail.ReplyTo,
@@ -162,7 +191,9 @@ func (dh *DbHandler) AddMailToThread(mail *db.Mail, threadId int64) {
 		log.Errorf("Error setting thread of mail %v to %v: %v", mail.ID, threadId, err)
 		return
 	}
-	err = dh.queries.UpdateThreadLastMail(context.Background(), db.UpdateThreadLastMailParams{
+	ctx2, cancel2 := defaultContext(ctx)
+	defer cancel2()
+	err = dh.queries.UpdateThreadLastMail(ctx2, db.UpdateThreadLastMailParams{
 		ID:          threadId,
 		LastMail:    pgtype.Int8{Int64: mail.ID, Valid: true},
 		LastMessage: pgtype.Timestamp{Time: mail.Timestamp.Time, Valid: true},
@@ -174,37 +205,46 @@ func (dh *DbHandler) AddMailToThread(mail *db.Mail, threadId int64) {
 	log.Infof("Added mail %v to thread %v", mail.ID, threadId)
 }
 
-func (dh *DbHandler) MarkMailAsSorted(mail *db.Mail) {
-	err := dh.queries.UpdateMailMarkSorted(context.Background(), mail.ID)
+func (dh *DbHandler) MarkMailAsSorted(ctx context.Context, mail *db.Mail) {
+	ctx, cancel := defaultContext(ctx)
+	defer cancel()
+	err := dh.queries.UpdateMailMarkSorted(ctx, mail.ID)
 	if err != nil {
 		log.Errorf("Error marking mail %v as sorted: %v", mail.ID, err)
 	}
 }
 
-func (dh *DbHandler) GetMailFetcherState(id string) (uint32, uint32) {
-	ctx := context.Background()
-	state, err := dh.queries.GetFetcherState(ctx, id)
+func (dh *DbHandler) GetMailFetcherState(ctx context.Context, id string) (uint32, uint32) {
+	ctxGet, cancelGet := defaultContext(ctx)
+	defer cancelGet()
+	state, err := dh.queries.GetFetcherState(ctxGet, id)
 	if err != nil {
-		log.Panicf("Error getting mail fetcher state: %v", err)
+		log.Errorf("Error getting mail fetcher state: %v", err)
 	}
 	if len(state) == 0 {
-		err = dh.queries.AddFetcher(ctx, id)
+		ctxSet, cancelSet := defaultContext(ctx)
+		defer cancelSet()
+		err = dh.queries.AddFetcher(ctxSet, id)
 		if err != nil {
-			log.Panicf("Error creating mail fetcher state: %v", err)
+			log.Errorf("Error creating mail fetcher state: %v", err)
 		}
-		return dh.GetMailFetcherState(id)
+		ctxGet, cancelGet = defaultContext(ctx)
+		defer cancelGet()
+		return dh.GetMailFetcherState(ctxGet, id)
 	}
 	return uint32(state[0].UidLast), uint32(state[0].UidValidity)
 }
 
-func (dh *DbHandler) UpdateMailFetcherState(id string, uidLast uint32, uidValidity uint32) {
-	err := dh.queries.UpdateFetcherState(context.Background(), db.UpdateFetcherStateParams{
+func (dh *DbHandler) UpdateMailFetcherState(ctx context.Context, id string, uidLast uint32, uidValidity uint32) {
+	ctx, cancel := defaultContext(ctx)
+	defer cancel()
+	err := dh.queries.UpdateFetcherState(ctx, db.UpdateFetcherStateParams{
 		ID:          id,
 		UidLast:     int32(uidLast),
 		UidValidity: int32(uidValidity),
 	})
 	if err != nil {
-		log.Panicf("Error updating mail fetcher state: %v", err)
+		log.Errorf("Error updating mail fetcher state: %v", err)
 	}
 }
 
@@ -213,7 +253,7 @@ var emailRegex = regexp.MustCompile("^([^@]+)@.*$")
 func displayName(name string, email string) string {
 	if strings.TrimSpace(name) == "" {
 		parsed := emailRegex.FindStringSubmatch(email)
-		if parsed != nil && len(parsed) >= 2 {
+		if len(parsed) >= 2 {
 			return parsed[1]
 		}
 		return email
@@ -221,8 +261,10 @@ func displayName(name string, email string) string {
 	return name
 }
 
-func (dh *DbHandler) GetMatrixReadyThreads() []*db.GetMatrixReadyThreadsRow {
-	threads, err := dh.queries.GetMatrixReadyThreads(context.Background())
+func (dh *DbHandler) GetMatrixReadyThreads(ctx context.Context) []*db.GetMatrixReadyThreadsRow {
+	ctx, cancel := defaultContext(ctx)
+	defer cancel()
+	threads, err := dh.queries.GetMatrixReadyThreads(ctx)
 	if err != nil {
 		log.Errorf("Error getting matrix ready threads from db: %v", err)
 		return []*db.GetMatrixReadyThreadsRow{}
@@ -234,8 +276,10 @@ func (dh *DbHandler) GetMatrixReadyThreads() []*db.GetMatrixReadyThreadsRow {
 	return threads
 }
 
-func (dh *DbHandler) GetMatrixReadyMails() []*db.GetMatrixReadyMailsRow {
-	mails, err := dh.queries.GetMatrixReadyMails(context.Background())
+func (dh *DbHandler) GetMatrixReadyMails(ctx context.Context) []*db.GetMatrixReadyMailsRow {
+	ctx, cancel := defaultContext(ctx)
+	defer cancel()
+	mails, err := dh.queries.GetMatrixReadyMails(ctx)
 	if err != nil {
 		log.Errorf("Error getting matrix ready mails from db: %v", err)
 		return []*db.GetMatrixReadyMailsRow{}
@@ -247,8 +291,10 @@ func (dh *DbHandler) GetMatrixReadyMails() []*db.GetMatrixReadyMailsRow {
 	return mails
 }
 
-func (dh *DbHandler) UpdateThreadMatrixIds(threadId int64, roomId string, messageId string) {
-	err := dh.queries.UpdateThreadMatrixIds(context.Background(), db.UpdateThreadMatrixIdsParams{
+func (dh *DbHandler) UpdateThreadMatrixIds(ctx context.Context, threadId int64, roomId string, messageId string) {
+	ctx, cancel := defaultContext(ctx)
+	defer cancel()
+	err := dh.queries.UpdateThreadMatrixIds(ctx, db.UpdateThreadMatrixIdsParams{
 		ID:           threadId,
 		MatrixID:     pgtype.Text{String: messageId, Valid: true},
 		MatrixRoomID: pgtype.Text{String: roomId, Valid: true},
@@ -258,8 +304,10 @@ func (dh *DbHandler) UpdateThreadMatrixIds(threadId int64, roomId string, messag
 	}
 }
 
-func (dh *DbHandler) UpdateMailMatrixId(mailId int64, matrixId string) {
-	err := dh.queries.UpdateMailMatrixId(context.Background(), db.UpdateMailMatrixIdParams{
+func (dh *DbHandler) UpdateMailMatrixId(ctx context.Context, mailId int64, matrixId string) {
+	ctx, cancel := defaultContext(ctx)
+	defer cancel()
+	err := dh.queries.UpdateMailMatrixId(ctx, db.UpdateMailMatrixIdParams{
 		ID:       mailId,
 		MatrixID: pgtype.Text{String: matrixId, Valid: true},
 	})
@@ -268,9 +316,11 @@ func (dh *DbHandler) UpdateMailMatrixId(mailId int64, matrixId string) {
 	}
 }
 
-func (dh *DbHandler) UpdateThreadEnabled(
+func (dh *DbHandler) UpdateThreadEnabled(ctx context.Context,
 	roomId string, messageId string, enabled bool, forceClose bool,
 ) bool {
+	ctx, cancel := defaultContext(ctx)
+	defer cancel()
 	params := db.UpdateThreadEnabledParams{
 		Enabled:      enabled,
 		MatrixID:     pgtype.Text{String: messageId, Valid: true},
@@ -280,7 +330,7 @@ func (dh *DbHandler) UpdateThreadEnabled(
 		ForceClose: pgtype.Bool{Bool: forceClose, Valid: enabled || forceClose},
 	}
 
-	count, err := dh.queries.UpdateThreadEnabled(context.Background(), params)
+	count, err := dh.queries.UpdateThreadEnabled(ctx, params)
 	if err != nil {
 		log.Errorf(
 			"Error enabled column of thread in room %v with message %v to %v: %v",
@@ -291,8 +341,9 @@ func (dh *DbHandler) UpdateThreadEnabled(
 	return count == 1
 }
 
-func (dh *DbHandler) AddAllRooms() {
-	ctx := context.Background()
+func (dh *DbHandler) AddAllRooms(ctx context.Context) {
+	ctx, cancel := defaultContext(ctx)
+	defer cancel()
 	for _, room := range dh.Config.Matrix.AllRooms() {
 		err := dh.queries.AddRoom(ctx, room)
 		if err != nil {
@@ -301,8 +352,9 @@ func (dh *DbHandler) AddAllRooms() {
 	}
 }
 
-func (dh *DbHandler) GetRoom(overviewRoom string) *db.Room {
-	ctx := context.Background()
+func (dh *DbHandler) GetRoom(ctx context.Context, overviewRoom string) *db.Room {
+	ctx, cancel := defaultContext(ctx)
+	defer cancel()
 	room, err := dh.queries.GetRoom(ctx, overviewRoom)
 	if err != nil {
 		log.Errorf("Error fetching room: %v", err)
@@ -311,9 +363,11 @@ func (dh *DbHandler) GetRoom(overviewRoom string) *db.Room {
 	return room
 }
 
-func (dh *DbHandler) UpdateRoomOverviewMessage(roomId string, messageId string) {
+func (dh *DbHandler) UpdateRoomOverviewMessage(ctx context.Context, roomId string, messageId string) {
+	ctx, cancel := defaultContext(ctx)
+	defer cancel()
 	err := dh.queries.UpdateRoomOverviewMessage(
-		context.Background(),
+		ctx,
 		db.UpdateRoomOverviewMessageParams{
 			ID:                roomId,
 			OverviewMessageID: pgtype.Text{String: messageId, Valid: true},
@@ -324,19 +378,24 @@ func (dh *DbHandler) UpdateRoomOverviewMessage(roomId string, messageId string) 
 	}
 }
 
-func (dh *DbHandler) GetOverviewThreads(
+func (dh *DbHandler) GetOverviewThreads(ctx context.Context,
 	overviewRoom string,
 ) (messageId string, authors []string, subjects []string, rooms []string, threadMsgs []string) {
-	ctx := context.Background()
-	room, err := dh.queries.GetRoom(ctx, overviewRoom)
+	// load room
+	ctxRoom, cancelRoom := defaultContext(ctx)
+	defer cancelRoom()
+	room, err := dh.queries.GetRoom(ctxRoom, overviewRoom)
 	if err != nil {
 		log.Errorf("Error reading overview room %v from db: %v", overviewRoom, err)
 		return "", []string{}, []string{}, []string{}, []string{}
 	}
 	messageId = room.OverviewMessageID.String
 
+	// load threads
 	targets := dh.Config.Matrix.GetOverviewRoomTargets(overviewRoom)
-	threads, err := dh.queries.GetOverviewThreads(ctx, targets)
+	ctxThreads, cancelThreads := defaultContext(ctx)
+	defer cancelThreads()
+	threads, err := dh.queries.GetOverviewThreads(ctxThreads, targets)
 	if err != nil {
 		log.Errorf("Error reading overview room %v from db: %v", overviewRoom, err)
 		return "", []string{}, []string{}, []string{}, []string{}
@@ -355,9 +414,11 @@ func (dh *DbHandler) GetOverviewThreads(
 	return
 }
 
-func (dh *DbHandler) OverviewMessageUpdated(roomId string, messageId string) {
+func (dh *DbHandler) OverviewMessageUpdated(ctx context.Context, roomId string, messageId string) {
+	ctx, cancel := defaultContext(ctx)
+	defer cancel()
 	err := dh.queries.UpdateRoomOverviewMessage(
-		context.Background(),
+		ctx,
 		db.UpdateRoomOverviewMessageParams{
 			ID:                roomId,
 			OverviewMessageID: pgtype.Text{String: messageId, Valid: true},
@@ -368,7 +429,7 @@ func (dh *DbHandler) OverviewMessageUpdated(roomId string, messageId string) {
 	}
 }
 
-func (dh *DbHandler) Stop(waitGroup *sync.WaitGroup) {
-	defer waitGroup.Done()
+func (dh *DbHandler) Stop() {
 	dh.pool.Close()
+	log.Info("Closed db connection")
 }

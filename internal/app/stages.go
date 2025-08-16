@@ -1,6 +1,7 @@
 package app
 
 import (
+	"context"
 	"fmt"
 	"sync"
 	"time"
@@ -10,19 +11,19 @@ import (
 	model "github.com/arne314/inbox-collab/internal/db/generated"
 )
 
-func (ic *InboxCollab) performMessageExtraction(mail *model.Mail) {
-	ic.llm.ExtractMessages(mail)
+func (ic *InboxCollab) performMessageExtraction(ctx context.Context, mail *model.Mail) {
+	ic.llm.ExtractMessages(ctx, mail)
 	if mail.Messages == nil || mail.Messages.Messages == nil {
 		log.Errorf("Error extracting messages for mail %v", mail.ID)
 	} else {
-		ic.dbHandler.UpdateExtractedMessages(mail)
+		ic.dbHandler.UpdateExtractedMessages(ctx, mail)
 	}
 }
 
 func (ic *InboxCollab) setupMessageExtractionStage() {
 	var wg sync.WaitGroup
-	work := func() bool {
-		mails := ic.dbHandler.GetMailsRequiringMessageExtraction()
+	work := func(ctx context.Context) bool {
+		mails := ic.dbHandler.GetMailsRequiringMessageExtraction(ctx)
 		if len(mails) == 0 {
 			if MessageExtractionStage.IsFirstWork {
 				ThreadSortingStage.QueueWork()
@@ -34,7 +35,7 @@ func (ic *InboxCollab) setupMessageExtractionStage() {
 		for _, mail := range mails {
 			go func(m *model.Mail) {
 				defer wg.Done()
-				ic.performMessageExtraction(m)
+				ic.performMessageExtraction(ctx, m)
 			}(mail)
 		}
 		wg.Wait()
@@ -49,8 +50,8 @@ func (ic *InboxCollab) setupMessageExtractionStage() {
 }
 
 func (ic *InboxCollab) setupThreadSortingStage() {
-	work := func() bool {
-		timeSinceMailboxUpdate := time.Now().Sub(ic.mailHandler.GetLastMailboxUpdate()).Seconds()
+	work := func(ctx context.Context) bool {
+		timeSinceMailboxUpdate := time.Since(ic.mailHandler.GetLastMailboxUpdate()).Seconds()
 		timeSinceSortRequest := ThreadSortingStage.TimeSinceQueued().Seconds()
 		waitForCompleteData := timeSinceMailboxUpdate < 10 && timeSinceSortRequest < 120 // timeout
 		if MessageExtractionStage.Working() || waitForCompleteData {
@@ -59,8 +60,8 @@ func (ic *InboxCollab) setupThreadSortingStage() {
 			return false
 		}
 
-		ic.dbHandler.AutoUpdateMailSorting()
-		mails := ic.dbHandler.GetMailsRequiringSorting()
+		ic.dbHandler.AutoUpdateMailSorting(ctx)
+		mails := ic.dbHandler.GetMailsRequiringSorting(ctx)
 		if len(mails) == 0 {
 			return true
 		}
@@ -68,20 +69,20 @@ func (ic *InboxCollab) setupThreadSortingStage() {
 		for _, mail := range mails {
 			var threadId int64
 			if mail.ReplyTo.Valid {
-				if m := ic.dbHandler.GetMailById(mail.ReplyTo.Int64); m.Thread.Valid &&
+				if m := ic.dbHandler.GetMailById(ctx, mail.ReplyTo.Int64); m.Thread.Valid &&
 					!m.ForceClose.Bool {
 					threadId = m.Thread.Int64
 				}
 			}
 			if threadId == 0 {
-				if m := ic.dbHandler.GetReferencedThreadParent(mail); m != nil {
+				if m := ic.dbHandler.GetReferencedThreadParent(ctx, mail); m != nil {
 					if t := m.Thread; t.Valid {
 						threadId = t.Int64
 					}
 				}
 			}
 			if threadId != 0 {
-				ic.dbHandler.AddMailToThread(mail, threadId)
+				ic.dbHandler.AddMailToThread(ctx, mail, threadId)
 				continue
 			}
 			headAllowed := true
@@ -93,9 +94,9 @@ func (ic *InboxCollab) setupThreadSortingStage() {
 				}
 			}
 			if headAllowed {
-				ic.dbHandler.CreateThread(mail)
+				ic.dbHandler.CreateThread(ctx, mail)
 			} else {
-				ic.dbHandler.MarkMailAsSorted(mail)
+				ic.dbHandler.MarkMailAsSorted(ctx, mail)
 			}
 		}
 		log.Infof("Done sorting %v mails", len(mails))
@@ -109,34 +110,37 @@ func (ic *InboxCollab) setupThreadSortingStage() {
 }
 
 func (ic *InboxCollab) setupMatrixNotificationsStage() {
-	setup := func() {
-		ic.dbHandler.AddAllRooms()
+	setup := func(ctx context.Context) {
+		ic.dbHandler.AddAllRooms(ctx)
 		if !ic.Config.Matrix.VerifySession {
 			ic.matrixHandler.WaitForRoomJoins()
 		}
 	}
-	work := func() bool {
+	touchedRooms := []string{}
+	work := func(ctx context.Context) bool {
 		if ic.Config.Matrix.VerifySession {
 			return true
 		}
-		touchedRooms := []string{}
+		if retry, ok := ctx.Value("retry").(bool); ok && !retry {
+			touchedRooms = []string{}
+		}
 
 		// post new threads
-		threads := ic.dbHandler.GetMatrixReadyThreads()
+		threads := ic.dbHandler.GetMatrixReadyThreads(ctx)
 		for _, thread := range threads {
 			ok, roomId, messageId := ic.matrixHandler.CreateThread(
 				thread.Fetcher.String, thread.AddrFrom, thread.AddrTo,
 				thread.NameFrom, thread.Subject,
 			)
 			if ok {
-				ic.dbHandler.UpdateThreadMatrixIds(thread.ID, roomId, messageId)
+				ic.dbHandler.UpdateThreadMatrixIds(ctx, thread.ID, roomId, messageId)
 				touchedRooms = append(touchedRooms, roomId)
 			} else {
 				return false
 			}
 		}
 		// add messages to threads
-		mails := ic.dbHandler.GetMatrixReadyMails()
+		mails := ic.dbHandler.GetMatrixReadyMails(ctx)
 		for _, mail := range mails {
 			ok, matrixId := ic.matrixHandler.AddReply(
 				mail.RootMatrixRoomID.String, mail.RootMatrixID.String, mail.NameFrom,
@@ -144,7 +148,7 @@ func (ic *InboxCollab) setupMatrixNotificationsStage() {
 				*mail.Messages, mail.IsFirst,
 			)
 			if ok {
-				ic.dbHandler.UpdateMailMatrixId(mail.ID, matrixId)
+				ic.dbHandler.UpdateMailMatrixId(ctx, mail.ID, matrixId)
 				touchedRooms = append(touchedRooms, mail.RootMatrixRoomID.String)
 			} else {
 				return false
@@ -177,19 +181,19 @@ func (ic *InboxCollab) QueueMatrixOverviewUpdate(touchedRooms []string) {
 }
 
 func (ic *InboxCollab) setupMatrixOverviewStage() {
-	genWork := func(roomId string) func() bool {
-		return func() bool {
+	genWork := func(roomId string) func(context.Context) bool {
+		return func(ctx context.Context) bool {
 			if ic.Config.Matrix.VerifySession {
 				return true
 			}
 			messageId, authors, subjects, rooms, threadMsgs := ic.dbHandler.GetOverviewThreads(
-				roomId,
+				ctx, roomId,
 			)
 			ok, messageId := ic.matrixHandler.UpdateThreadOverview(
 				roomId, messageId, authors, subjects, rooms, threadMsgs,
 			)
 			if ok {
-				ic.dbHandler.OverviewMessageUpdated(roomId, messageId)
+				ic.dbHandler.OverviewMessageUpdated(ctx, roomId, messageId)
 			} else {
 				return false
 			}

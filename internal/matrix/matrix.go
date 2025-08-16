@@ -1,6 +1,7 @@
 package matrix
 
 import (
+	"context"
 	"fmt"
 	"regexp"
 	"strings"
@@ -15,13 +16,15 @@ import (
 
 type MatrixHandler struct {
 	client *MatrixClient
+	ctx    context.Context
 	Config *config.MatrixConfig
 }
 
 func (mh *MatrixHandler) Setup(actions Actions, wg *sync.WaitGroup) {
 	defer wg.Done()
+	mh.ctx = context.Background()
 	mh.client = &MatrixClient{Config: mh.Config}
-	mh.client.Login(actions)
+	mh.client.Login(mh.ctx, actions)
 	go mh.client.Sync()
 }
 
@@ -160,7 +163,6 @@ func (mh *MatrixHandler) RemoveThreadOverview(
 	return mh.client.RedactMessage(overviewRoomId, overviewMessageId)
 }
 
-func (mh *MatrixHandler) Stop(waitGroup *sync.WaitGroup) {
-	defer waitGroup.Done()
+func (mh *MatrixHandler) Stop() {
 	mh.client.Stop()
 }

@@ -25,11 +25,18 @@ import (
 type MatrixClient struct {
 	Config             *config.MatrixConfig
 	client             *mautrix.Client
+	ctx                context.Context
 	cancelSync         context.CancelFunc
 	cryptoHelper       *cryptohelper.CryptoHelper
 	verificationHelper *verificationhelper.VerificationHelper
 	autoVerifySession  bool
 	commandHandler     *CommandHandler
+}
+
+const matrixTimeout = 100 * time.Second
+
+func (mc *MatrixClient) defaultContext() (context.Context, context.CancelFunc) {
+	return context.WithTimeout(mc.ctx, matrixTimeout)
 }
 
 // implement mautrix auth callbacks
@@ -88,12 +95,16 @@ func (mc *MatrixClient) ShowSAS(
 	)
 	go func() {
 		time.Sleep(5 * time.Second)
-		mc.verificationHelper.ConfirmSAS(context.Background(), txnID)
-		log.Infof("\"Confirmed\" SAS are the same")
+		err := mc.verificationHelper.ConfirmSAS(ctx, txnID)
+		if err == nil {
+			log.Infof("\"Confirmed\" SAS are the same")
+		} else {
+			log.Errorf("Error confirming SAS: %s", err)
+		}
 	}()
 }
 
-func (mc *MatrixClient) Login(actions Actions) {
+func (mc *MatrixClient) Login(ctx context.Context, actions Actions) {
 	client, err := mautrix.NewClient(mc.Config.HomeServer, "", "")
 	client.DefaultHTTPRetries = 3
 	// client.Log = zerolog.New(os.Stdout).With().Timestamp().Logger()
@@ -101,6 +112,7 @@ func (mc *MatrixClient) Login(actions Actions) {
 		log.Fatalf("Invalid matrix config: %v", err)
 	}
 	mc.client = client
+	mc.ctx = ctx
 	mc.commandHandler = NewCommandHandler(mc.Config, actions, mc)
 	syncer := client.Syncer.(*mautrix.DefaultSyncer)
 
@@ -110,7 +122,7 @@ func (mc *MatrixClient) Login(actions Actions) {
 			log.Infof("Received message\nSender: %s\nType: %s\nID: %s\nBody: %s\n",
 				sender, evt.Type.String(), evt.ID.String(), evt.Content.AsMessage().Body,
 			)
-			mc.commandHandler.ProcessMessage(evt)
+			mc.commandHandler.ProcessMessage(ctx, evt)
 		}
 	})
 
@@ -132,7 +144,7 @@ func (mc *MatrixClient) Login(actions Actions) {
 		// resend overview on member join
 		if evt.GetStateKey() != client.UserID.String() &&
 			evt.Content.AsMember().Membership == event.MembershipJoin {
-			mc.commandHandler.Actions.ResendThreadOverview(string(evt.RoomID))
+			mc.commandHandler.Actions.ResendThreadOverview(ctx, string(evt.RoomID))
 		}
 	})
 
@@ -158,7 +170,7 @@ func (mc *MatrixClient) Login(actions Actions) {
 	}
 
 	stateStore := sqlstatestore.NewSQLStateStore(sessionDb, dbutil.ZeroLogger(mc.client.Log), false)
-	err = stateStore.Upgrade(context.Background())
+	err = stateStore.Upgrade(ctx)
 	if err != nil {
 		log.Fatalf("Error upgrading state store db")
 	}
@@ -178,7 +190,7 @@ func (mc *MatrixClient) Login(actions Actions) {
 		Password:                 mc.Config.Password,
 		InitialDeviceDisplayName: "inbox-collab",
 	}
-	err = cryptoHelper.Init(context.Background())
+	err = cryptoHelper.Init(ctx)
 	if err != nil {
 		log.Fatalf("Error initializing cryptohelper: %v", err)
 	}
@@ -188,7 +200,7 @@ func (mc *MatrixClient) Login(actions Actions) {
 	verificationHelper := verificationhelper.NewVerificationHelper(
 		client, cryptoHelper.Machine(), nil, mc, false, false, true,
 	)
-	err = verificationHelper.Init(context.Background())
+	err = verificationHelper.Init(ctx)
 	if err != nil {
 		log.Fatalf("Error setting up verification helper: %v", err)
 	}
@@ -198,7 +210,9 @@ func (mc *MatrixClient) Login(actions Actions) {
 }
 
 func (mc *MatrixClient) ValidateRooms() (ok bool, missing string) {
-	joined, err := mc.client.JoinedRooms(context.Background())
+	ctx, cancel := mc.defaultContext()
+	defer cancel()
+	joined, err := mc.client.JoinedRooms(ctx)
 	if err != nil {
 		log.Errorf("Error fetching joined rooms: %v", err)
 		return true, ""
@@ -208,7 +222,9 @@ func (mc *MatrixClient) ValidateRooms() (ok bool, missing string) {
 		for _, j := range joined.JoinedRooms {
 			if j.String() == room {
 				member = true
-				_, err := mc.client.State(context.Background(), j)
+				ctx, cancel := mc.defaultContext()
+				defer cancel()
+				_, err := mc.client.State(ctx, j)
 				if err != nil {
 					log.Errorf("Error getting state of joined room: %v", err)
 				}
@@ -229,8 +245,10 @@ func (mc *MatrixClient) SleepOnRateLimit(err error) {
 }
 
 func (mc *MatrixClient) SendRoomMessage(roomId string, text string, html string) (bool, string) {
+	ctx, cancel := mc.defaultContext()
+	defer cancel()
 	resp, err := mc.client.SendMessageEvent(
-		context.Background(),
+		ctx,
 		id.RoomID(roomId),
 		event.EventMessage,
 		&event.MessageEventContent{
@@ -251,8 +269,10 @@ func (mc *MatrixClient) SendRoomMessage(roomId string, text string, html string)
 func (mc *MatrixClient) SendThreadMessage(
 	roomId string, threadId string, text string, html string,
 ) (bool, string) {
+	ctx, cancel := mc.defaultContext()
+	defer cancel()
 	resp, err := mc.client.SendMessageEvent(
-		context.Background(),
+		ctx,
 		id.RoomID(roomId),
 		event.EventMessage,
 		&event.MessageEventContent{
@@ -275,7 +295,8 @@ func (mc *MatrixClient) SendThreadMessage(
 }
 
 func (mc *MatrixClient) RedactMessage(roomId, messageId string) bool {
-	ctx := context.Background()
+	ctx, cancel := mc.defaultContext()
+	defer cancel()
 	_, err := mc.client.RedactEvent(ctx, id.RoomID(roomId), id.EventID(messageId))
 	if err != nil {
 		log.Errorf("Error redacting message event: %v", err)
@@ -286,7 +307,9 @@ func (mc *MatrixClient) RedactMessage(roomId, messageId string) bool {
 }
 
 func (mc *MatrixClient) MessageRedacted(roomId string, messageId string) bool {
-	evt, err := mc.client.GetEvent(context.Background(), id.RoomID(roomId), id.EventID(messageId))
+	ctx, cancel := mc.defaultContext()
+	defer cancel()
+	evt, err := mc.client.GetEvent(ctx, id.RoomID(roomId), id.EventID(messageId))
 	if err != nil {
 		log.Errorf("Error fetching matrix event: %v", err)
 		return true
@@ -298,7 +321,8 @@ func (mc *MatrixClient) EditRoomMessage(
 	roomId string, messageId string, text string, html string,
 ) (bool, string) {
 	var err error
-	ctx := context.Background()
+	ctx, cancel := mc.defaultContext()
+	defer cancel()
 	if mc.MessageRedacted(roomId, messageId) {
 		return mc.SendRoomMessage(roomId, text, html)
 	}
@@ -338,8 +362,10 @@ func (mc *MatrixClient) EditRoomMessage(
 }
 
 func (mc *MatrixClient) ReactToMessage(roomId string, messageId string, reaction string) {
+	ctx, cancel := mc.defaultContext()
+	defer cancel()
 	_, err := mc.client.SendReaction(
-		context.Background(), id.RoomID(roomId), id.EventID(messageId), reaction,
+		ctx, id.RoomID(roomId), id.EventID(messageId), reaction,
 	)
 	if err != nil {
 		log.Errorf("Error reacting to message: %v", err)
@@ -347,7 +373,7 @@ func (mc *MatrixClient) ReactToMessage(roomId string, messageId string, reaction
 }
 
 func (mc *MatrixClient) Sync() {
-	syncCtx, cancelSync := context.WithCancel(context.Background())
+	syncCtx, cancelSync := context.WithCancel(mc.ctx)
 	mc.cancelSync = cancelSync
 	err := mc.client.SyncWithContext(syncCtx)
 	if err != nil && !errors.Is(err, context.Canceled) {

@@ -1,6 +1,7 @@
 package app
 
 import (
+	"context"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -10,23 +11,30 @@ import (
 
 type PipelineStage struct {
 	name            string
-	setup           func()
-	work            func() bool
+	setup           func(context.Context)
+	work            func(context.Context) bool
 	done            atomic.Bool
 	launch          chan struct{}
 	queuedTime      time.Time
 	queuedTimeMutex sync.RWMutex
 	isWorking       atomic.Bool
 	IsFirstWork     bool
+
+	ctx         context.Context
+	cancelFunc  context.CancelFunc
+	active      bool
+	activeMutex sync.Mutex // to safely close the launch channel
 }
 
-func NewStage(name string, setup func(), work func() bool, initialQueue bool) *PipelineStage {
+func NewStage(name string, setup func(context.Context), work func(context.Context) bool, initialQueue bool) *PipelineStage {
 	if setup == nil {
-		setup = func() {}
+		setup = func(context.Context) {}
 	}
+	ctx, cancel := context.WithCancel(context.Background())
 	stage := &PipelineStage{
 		name: name, setup: setup, work: work,
 		IsFirstWork: true, launch: make(chan struct{}, 1),
+		ctx: ctx, cancelFunc: cancel, active: true,
 	}
 	stage.done.Store(true)
 	if initialQueue {
@@ -36,6 +44,11 @@ func NewStage(name string, setup func(), work func() bool, initialQueue bool) *P
 }
 
 func (s *PipelineStage) QueueWork() { // ensures that work is queued at most once
+	s.activeMutex.Lock()
+	defer s.activeMutex.Unlock()
+	if !s.active {
+		return
+	}
 	queue := s.done.CompareAndSwap(true, false)
 	if queue {
 		log.Infof("Queued pipeline stage '%s'", s.name)
@@ -46,15 +59,19 @@ func (s *PipelineStage) QueueWork() { // ensures that work is queued at most onc
 	}
 }
 
-func (s *PipelineStage) Run() {
-	s.setup()
+func (s *PipelineStage) Run(waitGroup *sync.WaitGroup) {
+	defer waitGroup.Done()
+	s.setup(s.ctx)
 	for range s.launch {
 		log.Infof("Executing pipeline stage '%s'...", s.name)
 		s.done.Store(true)
 		s.isWorking.Store(true)
-		retry := true
-		for retry {
-			retry = !s.work()
+		first := true
+		retry := false
+		for first || retry {
+			ctx := context.WithValue(s.ctx, "retry", retry)
+			first = false
+			retry = !s.work(ctx) && ctx.Err() == nil
 		}
 		s.isWorking.Store(false)
 		s.IsFirstWork = false
@@ -69,5 +86,21 @@ func (s *PipelineStage) Working() bool {
 func (s *PipelineStage) TimeSinceQueued() time.Duration {
 	s.queuedTimeMutex.RLock()
 	defer s.queuedTimeMutex.RUnlock()
-	return time.Now().Sub(s.queuedTime)
+	return time.Since(s.queuedTime)
+}
+
+func (s *PipelineStage) close() {
+	s.activeMutex.Lock()
+	defer s.activeMutex.Unlock()
+	s.active = false
+	close(s.launch)
+}
+
+func (s *PipelineStage) Stop() {
+	s.close()
+}
+
+func (s *PipelineStage) ForceStop() {
+	s.close()
+	s.cancelFunc()
 }
