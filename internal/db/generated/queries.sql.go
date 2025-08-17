@@ -401,19 +401,21 @@ func (q *Queries) GetMatrixReadyMails(ctx context.Context) ([]*GetMatrixReadyMai
 }
 
 const getMatrixReadyThreads = `-- name: GetMatrixReadyThreads :many
-SELECT thread.id, mail.fetcher, mail.addr_from, mail.addr_to, mail.subject, mail.name_from FROM thread
+SELECT thread.id, thread.matrix_room_id, mail.fetcher,
+mail.addr_from, mail.addr_to, mail.subject, mail.name_from FROM thread
 JOIN mail ON thread.first_mail = mail.id
 WHERE thread.matrix_id IS NULL
 ORDER BY mail.timestamp
 `
 
 type GetMatrixReadyThreadsRow struct {
-	ID       int64
-	Fetcher  pgtype.Text
-	AddrFrom string
-	AddrTo   []string
-	Subject  string
-	NameFrom string
+	ID           int64
+	MatrixRoomID pgtype.Text
+	Fetcher      pgtype.Text
+	AddrFrom     string
+	AddrTo       []string
+	Subject      string
+	NameFrom     string
 }
 
 func (q *Queries) GetMatrixReadyThreads(ctx context.Context) ([]*GetMatrixReadyThreadsRow, error) {
@@ -427,6 +429,7 @@ func (q *Queries) GetMatrixReadyThreads(ctx context.Context) ([]*GetMatrixReadyT
 		var i GetMatrixReadyThreadsRow
 		if err := rows.Scan(
 			&i.ID,
+			&i.MatrixRoomID,
 			&i.Fetcher,
 			&i.AddrFrom,
 			&i.AddrTo,
@@ -601,6 +604,58 @@ func (q *Queries) GetRoom(ctx context.Context, id string) (*Room, error) {
 	return &i, err
 }
 
+const getRooms = `-- name: GetRooms :many
+SELECT id, name, name_last_update, overview_message_id, overview_message_last_update FROM room
+WHERE id = ANY($1::text[])
+`
+
+func (q *Queries) GetRooms(ctx context.Context, dollar_1 []string) ([]*Room, error) {
+	rows, err := q.db.Query(ctx, getRooms, dollar_1)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []*Room
+	for rows.Next() {
+		var i Room
+		if err := rows.Scan(
+			&i.ID,
+			&i.Name,
+			&i.NameLastUpdate,
+			&i.OverviewMessageID,
+			&i.OverviewMessageLastUpdate,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, &i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const getThreadByMatrixId = `-- name: GetThreadByMatrixId :one
+SELECT id, enabled, force_close, last_message, matrix_id, matrix_room_id, first_mail, last_mail FROM thread
+WHERE matrix_id = $1 LIMIT 1
+`
+
+func (q *Queries) GetThreadByMatrixId(ctx context.Context, matrixID pgtype.Text) (*Thread, error) {
+	row := q.db.QueryRow(ctx, getThreadByMatrixId, matrixID)
+	var i Thread
+	err := row.Scan(
+		&i.ID,
+		&i.Enabled,
+		&i.ForceClose,
+		&i.LastMessage,
+		&i.MatrixID,
+		&i.MatrixRoomID,
+		&i.FirstMail,
+		&i.LastMail,
+	)
+	return &i, err
+}
+
 const mailCount = `-- name: MailCount :one
 SELECT COUNT(*) FROM mail
 `
@@ -620,6 +675,17 @@ WHERE thread = $1
 
 func (q *Queries) RemoveMailMatrixIdsByThread(ctx context.Context, thread pgtype.Int8) error {
 	_, err := q.db.Exec(ctx, removeMailMatrixIdsByThread, thread)
+	return err
+}
+
+const removeThreadMatrixId = `-- name: RemoveThreadMatrixId :exec
+UPDATE thread
+SET matrix_id = NULL
+WHERE id = $1
+`
+
+func (q *Queries) RemoveThreadMatrixId(ctx context.Context, id int64) error {
+	_, err := q.db.Exec(ctx, removeThreadMatrixId, id)
 	return err
 }
 
@@ -697,6 +763,22 @@ type UpdateMailSortingParams struct {
 
 func (q *Queries) UpdateMailSorting(ctx context.Context, arg UpdateMailSortingParams) error {
 	_, err := q.db.Exec(ctx, updateMailSorting, arg.ID, arg.Thread, arg.ReplyTo)
+	return err
+}
+
+const updateRoomName = `-- name: UpdateRoomName :exec
+UPDATE room
+SET name = $2, name_last_update = CURRENT_TIMESTAMP
+WHERE id = $1
+`
+
+type UpdateRoomNameParams struct {
+	ID   string
+	Name pgtype.Text
+}
+
+func (q *Queries) UpdateRoomName(ctx context.Context, arg UpdateRoomNameParams) error {
+	_, err := q.db.Exec(ctx, updateRoomName, arg.ID, arg.Name)
 	return err
 }
 
