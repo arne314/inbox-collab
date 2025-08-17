@@ -267,8 +267,11 @@ func (mc *MatrixClient) SendRoomMessage(roomId string, text string, html string)
 }
 
 func (mc *MatrixClient) SendThreadMessage(
-	roomId string, threadId string, text string, html string,
-) (bool, string) {
+	roomId string, threadId string, text string, html string, ignoreRedacted bool,
+) (bool, bool, string) {
+	if !ignoreRedacted && mc.MessageRedacted(roomId, threadId) {
+		return false, true, ""
+	}
 	ctx, cancel := mc.defaultContext()
 	defer cancel()
 	resp, err := mc.client.SendMessageEvent(
@@ -289,9 +292,9 @@ func (mc *MatrixClient) SendThreadMessage(
 	if err != nil {
 		log.Errorf("Error responding to thread on matrix: %v", err)
 		mc.SleepOnRateLimit(err)
-		return false, ""
+		return false, false, ""
 	}
-	return true, resp.EventID.String()
+	return true, false, resp.EventID.String()
 }
 
 func (mc *MatrixClient) RedactMessage(roomId, messageId string) bool {

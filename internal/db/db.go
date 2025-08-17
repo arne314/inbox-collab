@@ -304,6 +304,28 @@ func (dh *DbHandler) UpdateThreadMatrixIds(ctx context.Context, threadId int64, 
 	}
 }
 
+func (dh *DbHandler) RemoveMatrixIdsFromThread(ctx context.Context, threadId int64) bool {
+	ctxThread, cancelThread := defaultContext(ctx)
+	defer cancelThread()
+	err := dh.queries.UpdateThreadMatrixIds(ctxThread, db.UpdateThreadMatrixIdsParams{
+		ID:           threadId,
+		MatrixID:     pgtype.Text{}, // null as Valid is false
+		MatrixRoomID: pgtype.Text{},
+	})
+	if err != nil {
+		log.Errorf("Error removing thread matrix id: %v", err)
+		return false
+	}
+	ctxMail, cancelMail := defaultContext(ctx)
+	defer cancelMail()
+	err = dh.queries.RemoveMailMatrixIdsByThread(ctxMail, pgtype.Int8{Int64: threadId, Valid: true})
+	if err != nil {
+		log.Errorf("Error removing mail matrix ids for thread %v: %v", threadId, err)
+		return false
+	}
+	return true
+}
+
 func (dh *DbHandler) UpdateMailMatrixId(ctx context.Context, mailId int64, matrixId string) {
 	ctx, cancel := defaultContext(ctx)
 	defer cancel()

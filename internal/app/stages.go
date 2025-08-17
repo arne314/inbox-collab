@@ -116,7 +116,13 @@ func (ic *InboxCollab) setupMatrixNotificationsStage() {
 			ic.matrixHandler.WaitForRoomJoins()
 		}
 	}
+	type threadHead struct {
+		roomId    string
+		messageId string
+	}
 	touchedRooms := []string{}
+	recreatedThreads := make(map[int64]*threadHead) // threadId -> old head
+
 	work := func(ctx context.Context) bool {
 		if ic.Config.Matrix.VerifySession {
 			return true
@@ -132,27 +138,38 @@ func (ic *InboxCollab) setupMatrixNotificationsStage() {
 				thread.Fetcher.String, thread.AddrFrom, thread.AddrTo,
 				thread.NameFrom, thread.Subject,
 			)
-			if ok {
-				ic.dbHandler.UpdateThreadMatrixIds(ctx, thread.ID, roomId, messageId)
-				touchedRooms = append(touchedRooms, roomId)
-			} else {
+			if !ok {
 				return false
 			}
+			ic.dbHandler.UpdateThreadMatrixIds(ctx, thread.ID, roomId, messageId)
+			touchedRooms = append(touchedRooms, roomId)
+
+			if head, ok := recreatedThreads[thread.ID]; ok {
+				if ic.matrixHandler.NotifyRecreation(head.roomId, head.messageId, roomId, messageId) {
+					delete(recreatedThreads, thread.ID)
+				}
+			}
 		}
+
 		// add messages to threads
 		mails := ic.dbHandler.GetMatrixReadyMails(ctx)
 		for _, mail := range mails {
-			ok, matrixId := ic.matrixHandler.AddReply(
+			ok, redacted, matrixId := ic.matrixHandler.AddReply(
 				mail.RootMatrixRoomID.String, mail.RootMatrixID.String, mail.NameFrom,
 				mail.Subject, mail.Timestamp.Time, mail.Attachments,
 				*mail.Messages, mail.IsFirst,
 			)
-			if ok {
-				ic.dbHandler.UpdateMailMatrixId(ctx, mail.ID, matrixId)
-				touchedRooms = append(touchedRooms, mail.RootMatrixRoomID.String)
-			} else {
+			if redacted && ic.dbHandler.RemoveMatrixIdsFromThread(ctx, mail.Thread.Int64) {
+				log.Infof("Thread head of mail %v has been redacted, queueing recreation...", mail.ID)
+				recreatedThreads[mail.Thread.Int64] = &threadHead{
+					roomId: mail.RootMatrixRoomID.String, messageId: mail.RootMatrixID.String,
+				}
+			}
+			if !ok {
 				return false
 			}
+			ic.dbHandler.UpdateMailMatrixId(ctx, mail.ID, matrixId)
+			touchedRooms = append(touchedRooms, mail.RootMatrixRoomID.String)
 		}
 		updateOverview := len(threads) > 0 || len(mails) > 0
 		if updateOverview {

@@ -80,7 +80,7 @@ func (mh *MatrixHandler) CreateThread(
 func (mh *MatrixHandler) AddReply(
 	roomId string, threadId string, author string, subject string,
 	timestamp time.Time, attachments []string, conversation model.ExtractedMessages, isFirst bool,
-) (bool, string) {
+) (bool, bool, string) {
 	builder := NewTextHtmlBuilder()
 	hasHead := false
 	if !isFirst {
@@ -119,7 +119,7 @@ func (mh *MatrixHandler) AddReply(
 		content := *conversation.Messages[0].Content
 		builder.Write(content, formatHtml(content))
 	}
-	return mh.client.SendThreadMessage(roomId, threadId, builder.Text(), builder.Html())
+	return mh.client.SendThreadMessage(roomId, threadId, builder.Text(), builder.Html(), false)
 }
 
 func (mh *MatrixHandler) UpdateThreadOverview(
@@ -161,6 +161,18 @@ func (mh *MatrixHandler) RemoveThreadOverview(
 	overviewRoomId, overviewMessageId string,
 ) bool {
 	return mh.client.RedactMessage(overviewRoomId, overviewMessageId)
+}
+
+func (mh *MatrixHandler) addThreadWarningLink(roomId, threadId, linkRoomId, linkMessageId, note string) bool {
+	builder := NewTextHtmlBuilder()
+	link := formatMessageLink(linkRoomId, linkMessageId, mh.Config.HomeServer)
+	builder.Write(formatAttribute("⚠️ Warning", fmt.Sprintf("%v %v", note, link)))
+	ok, _, _ := mh.client.SendThreadMessage(roomId, threadId, builder.Text(), builder.Html(), true)
+	return ok
+}
+
+func (mh *MatrixHandler) NotifyRecreation(roomId, threadId, linkRoomId, linkMessageId string) bool {
+	return mh.addThreadWarningLink(roomId, threadId, linkRoomId, linkMessageId, "Due to message removal this thread has been recreated at")
 }
 
 func (mh *MatrixHandler) Stop() {

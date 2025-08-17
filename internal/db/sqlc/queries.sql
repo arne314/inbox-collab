@@ -106,6 +106,11 @@ UPDATE mail
 SET matrix_id = $2
 WHERE id = $1;
 
+-- name: RemoveMailMatrixIdsByThread :exec
+UPDATE mail
+SET matrix_id = NULL
+WHERE thread = $1;
+
 -- name: GetOverviewThreads :many
 SELECT thread.*, mail.name_from, mail.addr_from, mail.subject, mail.matrix_id AS message_id
 FROM thread
