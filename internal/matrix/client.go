@@ -238,6 +238,22 @@ func (mc *MatrixClient) ValidateRooms() (ok bool, missing string) {
 	return true, ""
 }
 
+type roomNameContent struct {
+	Name string `json:"name"`
+}
+
+func (mc *MatrixClient) GetRoomName(roomId string) (bool, string) {
+	ctx, cancel := mc.defaultContext()
+	defer cancel()
+	var content roomNameContent
+	err := mc.client.StateEvent(ctx, id.RoomID(roomId), event.StateRoomName, "", &content)
+	if err != nil {
+		log.Errorf("Error getting room state: %v", err)
+		return false, ""
+	}
+	return true, content.Name
+}
+
 func (mc *MatrixClient) SleepOnRateLimit(err error) {
 	if strings.Contains(err.Error(), "M_LIMIT_EXCEEDED") {
 		time.Sleep(time.Second * 5)
@@ -364,15 +380,17 @@ func (mc *MatrixClient) EditRoomMessage(
 	return true, messageId
 }
 
-func (mc *MatrixClient) ReactToMessage(roomId string, messageId string, reaction string) {
+func (mc *MatrixClient) ReactToMessage(roomId string, messageId string, reaction string) string {
 	ctx, cancel := mc.defaultContext()
 	defer cancel()
-	_, err := mc.client.SendReaction(
+	resp, err := mc.client.SendReaction(
 		ctx, id.RoomID(roomId), id.EventID(messageId), reaction,
 	)
 	if err != nil {
 		log.Errorf("Error reacting to message: %v", err)
+		return ""
 	}
+	return resp.EventID.String()
 }
 
 func (mc *MatrixClient) Sync() {

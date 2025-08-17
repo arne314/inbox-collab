@@ -3,7 +3,9 @@ package app
 import (
 	"context"
 	"slices"
+	"strings"
 	"sync"
+	"time"
 
 	"github.com/jackc/pgx/v5/pgtype"
 	log "github.com/sirupsen/logrus"
@@ -20,6 +22,7 @@ var (
 	ThreadSortingStage      *PipelineStage
 	MatrixNotificationStage *PipelineStage
 	MatrixOverviewStages    map[string]*PipelineStage
+	recreatedThreads        sync.Map
 )
 
 type InboxCollab struct {
@@ -106,7 +109,7 @@ func (ic *InboxCollab) storeMails(waitGroup *sync.WaitGroup) {
 func (ic *InboxCollab) OpenThread(ctx context.Context, roomId string, threadId string) bool {
 	ok := ic.dbHandler.UpdateThreadEnabled(ctx, roomId, threadId, true, false)
 	if ok {
-		ic.QueueMatrixOverviewUpdate([]string{roomId})
+		ic.QueueMatrixOverviewUpdate([]string{roomId}, true)
 	}
 	return ok
 }
@@ -117,7 +120,7 @@ func (ic *InboxCollab) CloseThread(ctx context.Context, roomId string, threadId 
 		false, // force close boolean is ignored internally
 	)
 	if ok {
-		ic.QueueMatrixOverviewUpdate([]string{roomId})
+		ic.QueueMatrixOverviewUpdate([]string{roomId}, true)
 	}
 	return ok
 }
@@ -125,9 +128,53 @@ func (ic *InboxCollab) CloseThread(ctx context.Context, roomId string, threadId 
 func (ic *InboxCollab) ForceCloseThread(ctx context.Context, roomId string, threadId string) bool {
 	ok := ic.dbHandler.UpdateThreadEnabled(ctx, roomId, threadId, false, true)
 	if ok {
-		ic.QueueMatrixOverviewUpdate([]string{roomId})
+		ic.QueueMatrixOverviewUpdate([]string{roomId}, true)
 	}
 	return ok
+}
+
+func (ic *InboxCollab) MoveThread(ctx context.Context, roomId string, threadId string, query string) bool {
+	var targetRoom string
+	query = strings.ToLower(query)
+	roomIds := ic.Config.Matrix.AllTargetRooms()
+	for _, r := range ic.dbHandler.GetRooms(ctx, roomIds) {
+		if strings.Contains(strings.ToLower(r.Name.String), query) {
+			if targetRoom != "" { // allow excactly one match
+				return false
+			}
+			targetRoom = r.ID
+		}
+	}
+	if targetRoom == "" || targetRoom == roomId {
+		return false
+	}
+	thread := ic.dbHandler.GetThreadByMatrixId(ctx, threadId)
+	if thread == nil {
+		return false
+	}
+	ok := ic.dbHandler.RemoveMatrixMessageIdsOfThread(ctx, thread.ID)
+	ok = ic.dbHandler.UpdateThreadMatrixIds(ctx, thread.ID, targetRoom, "") || ok
+	if !ok {
+		return false
+	}
+	var wg sync.WaitGroup
+	wg.Add(2)
+	go func() {
+		ic.QueueMatrixOverviewUpdate([]string{roomId}, true)
+		wg.Done()
+	}()
+	recreatedThreads.Store(thread.ID, &recreatedThreadHead{ // to link new thread once created
+		roomId:      roomId,
+		threadId:    threadId,
+		intentional: true,
+	})
+	go func() {
+		MatrixNotificationStage.QueueWorkBlocking()
+		time.Sleep(2 * time.Second)
+		wg.Done()
+	}()
+	wg.Wait()
+	return true
 }
 
 func (ic *InboxCollab) ResendThreadOverview(ctx context.Context, roomId string) bool {
@@ -139,7 +186,7 @@ func (ic *InboxCollab) ResendThreadOverview(ctx context.Context, roomId string) 
 	if room != nil {
 		ok = ic.matrixHandler.RemoveThreadOverview(roomId, room.OverviewMessageID.String)
 		if ok {
-			MatrixOverviewStages[roomId].QueueWork()
+			MatrixOverviewStages[roomId].QueueWorkBlocking()
 		}
 	}
 	return ok
@@ -147,17 +194,21 @@ func (ic *InboxCollab) ResendThreadOverview(ctx context.Context, roomId string) 
 
 func (ic *InboxCollab) ResendThreadOverviewAll(ctx context.Context) bool {
 	ok := true
-	rooms := ic.Config.Matrix.AllOverviewRooms()
-	for _, roomId := range rooms {
-		room := ic.dbHandler.GetRoom(ctx, roomId)
-		if room != nil {
-			if ic.matrixHandler.RemoveThreadOverview(roomId, room.OverviewMessageID.String) {
-				MatrixOverviewStages[roomId].QueueWork()
-			} else {
-				ok = false
-			}
+	roomIds := ic.Config.Matrix.AllOverviewRooms()
+	for _, room := range ic.dbHandler.GetRooms(ctx, roomIds) {
+		if !ic.matrixHandler.RemoveThreadOverview(room.ID, room.OverviewMessageID.String) {
+			ok = false
 		}
 	}
+	var wg sync.WaitGroup
+	wg.Add(len(roomIds))
+	for _, roomId := range roomIds {
+		go func(roomId string) {
+			MatrixOverviewStages[roomId].QueueWorkBlocking()
+			wg.Done()
+		}(roomId)
+	}
+	wg.Wait()
 	return ok
 }
 

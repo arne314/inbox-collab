@@ -17,6 +17,7 @@ type Actions interface {
 	OpenThread(ctx context.Context, roomId string, threadId string) bool
 	CloseThread(ctx context.Context, roomId string, threadId string) bool
 	ForceCloseThread(ctx context.Context, roomId string, threadId string) bool
+	MoveThread(ctx context.Context, roomId string, threadId string, query string) bool
 	ResendThreadOverview(ctx context.Context, roomId string) bool
 	ResendThreadOverviewAll(ctx context.Context) bool
 }
@@ -35,21 +36,26 @@ var (
 		"open",
 		"close",
 		"forceclose",
+		"move",
 		"resendoverview",
 		"resendoverviewall",
 	}
-	commandRegex          *regexp.Regexp = regexp.MustCompile(`^\s*!\s*([a-zA-Z]+)`)
+	commandRegex          *regexp.Regexp = regexp.MustCompile(`^\s*!\s*([a-zA-Z]+)\s*(.*)\s*$`)
+	argsRegex             *regexp.Regexp = regexp.MustCompile(`\S+`)
 	CommandStateReactions []string       = []string{"👀", "⏳", "✅", "❌"}
 	roomMutexes           map[string]*sync.Mutex
 )
 
 type Command struct {
-	Name      string
-	state     CommandState
-	event     *event.Event
-	roomId    string
-	messageId string
-	content   *event.MessageEventContent
+	Name           string
+	Arg            string
+	Args           []string
+	state          CommandState
+	event          *event.Event
+	roomId         string
+	messageId      string
+	lastReactionId string
+	content        *event.MessageEventContent
 
 	client  *MatrixClient
 	actions Actions
@@ -57,7 +63,10 @@ type Command struct {
 
 func (c *Command) reportState(state CommandState) {
 	c.state = state
-	c.client.ReactToMessage(c.roomId, c.messageId, CommandStateReactions[c.state])
+	if c.lastReactionId != "" {
+		c.client.RedactMessage(c.roomId, c.lastReactionId)
+	}
+	c.lastReactionId = c.client.ReactToMessage(c.roomId, c.messageId, CommandStateReactions[c.state])
 	log.Infof("Command state of %v changed to %v", c.Name, CommandStateReactions[c.state])
 }
 
@@ -75,6 +84,7 @@ func (c *Command) Run(ctx context.Context) {
 	if rel := c.content.RelatesTo; rel != nil && rel.Type == event.RelThread {
 		threadId = rel.EventID.String()
 	}
+
 	switch c.Name {
 	case "open":
 		if threadId == "" {
@@ -94,13 +104,23 @@ func (c *Command) Run(ctx context.Context) {
 		} else {
 			ok = c.actions.ForceCloseThread(ctx, c.roomId, threadId)
 		}
+	case "move":
+		if threadId == "" {
+			ok = false
+		} else {
+			c.reportState(Pending)
+			ok = c.actions.MoveThread(ctx, c.roomId, threadId, c.Arg)
+		}
 	case "resendoverview":
+		c.reportState(Pending)
 		ok = c.actions.ResendThreadOverview(ctx, c.roomId)
 	case "resendoverviewall":
+		c.reportState(Pending)
 		ok = c.actions.ResendThreadOverviewAll(ctx)
 	default:
 		ok = false
 	}
+
 	if ok {
 		c.reportState(Done)
 	} else {
@@ -109,12 +129,14 @@ func (c *Command) Run(ctx context.Context) {
 	log.Infof("Done handling command %v", c.Name)
 }
 
-func NewCommand(name string, evt *event.Event, client *MatrixClient, actions Actions) *Command {
+func NewCommand(name string, arg string, args []string, evt *event.Event, client *MatrixClient, actions Actions) *Command {
 	roomId := evt.RoomID.String()
 	messageId := evt.ID.String()
 	content := evt.Content.AsMessage()
 	return &Command{
 		Name:      name,
+		Arg:       arg,
+		Args:      args,
 		state:     Default,
 		event:     evt,
 		roomId:    roomId,
@@ -148,8 +170,14 @@ func (ch *CommandHandler) ProcessMessage(ctx context.Context, evt *event.Event) 
 		return
 	}
 	cmd := strings.ToLower(parsed[1])
+	arg := ""
+	args := []string{}
+	if len(parsed) > 2 {
+		arg = strings.TrimSpace(parsed[2])
+		args = argsRegex.FindAllString(parsed[2], -1)
+	}
 	if slices.Contains(commands, cmd) {
-		c := NewCommand(cmd, evt, ch.client, ch.Actions)
+		c := NewCommand(cmd, arg, args, evt, ch.client, ch.Actions)
 		go c.Run(ctx)
 	}
 }

@@ -20,10 +20,12 @@ type PipelineStage struct {
 	isWorking       atomic.Bool
 	IsFirstWork     bool
 
-	ctx         context.Context
-	cancelFunc  context.CancelFunc
-	active      bool
-	activeMutex sync.Mutex // to safely close the launch channel
+	ctx            context.Context
+	cancelFunc     context.CancelFunc
+	active         bool
+	activeMutex    sync.Mutex // to safely close the launch channel
+	blockings      []chan struct{}
+	blockingsMutex sync.Mutex
 }
 
 func NewStage(name string, setup func(context.Context), work func(context.Context) bool, initialQueue bool) *PipelineStage {
@@ -59,6 +61,15 @@ func (s *PipelineStage) QueueWork() { // ensures that work is queued at most onc
 	}
 }
 
+func (s *PipelineStage) QueueWorkBlocking() {
+	done := make(chan struct{})
+	s.blockingsMutex.Lock()
+	s.blockings = append(s.blockings, done)
+	s.blockingsMutex.Unlock()
+	s.QueueWork()
+	<-done
+}
+
 func (s *PipelineStage) Run(waitGroup *sync.WaitGroup) {
 	defer waitGroup.Done()
 	s.setup(s.ctx)
@@ -75,6 +86,14 @@ func (s *PipelineStage) Run(waitGroup *sync.WaitGroup) {
 		}
 		s.isWorking.Store(false)
 		s.IsFirstWork = false
+		s.blockingsMutex.Lock()
+		if len(s.launch) == 0 { // actually done
+			for _, c := range s.blockings {
+				close(c)
+			}
+			s.blockings = []chan struct{}{}
+		}
+		s.blockingsMutex.Unlock()
 		log.Infof("Done executing pipeline stage '%s'", s.name)
 	}
 }

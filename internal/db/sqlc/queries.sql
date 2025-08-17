@@ -54,6 +54,10 @@ INSERT INTO thread (last_message, first_mail, last_mail)
 VALUES (CURRENT_TIMESTAMP, $1, $1)
 RETURNING *;
 
+-- name: GetThreadByMatrixId :one
+SELECT * FROM thread
+WHERE matrix_id = $1 LIMIT 1;
+
 -- name: UpdateThreadLastMessage :exec
 UPDATE thread
 SET last_message = CURRENT_TIMESTAMP
@@ -83,7 +87,8 @@ SET uid_last = $2, uid_validity = $3
 WHERE id = $1;
 
 -- name: GetMatrixReadyThreads :many
-SELECT thread.id, mail.fetcher, mail.addr_from, mail.addr_to, mail.subject, mail.name_from FROM thread
+SELECT thread.id, thread.matrix_room_id, mail.fetcher,
+mail.addr_from, mail.addr_to, mail.subject, mail.name_from FROM thread
 JOIN mail ON thread.first_mail = mail.id
 WHERE thread.matrix_id IS NULL
 ORDER BY mail.timestamp;
@@ -106,6 +111,11 @@ UPDATE mail
 SET matrix_id = $2
 WHERE id = $1;
 
+-- name: RemoveThreadMatrixId :exec
+UPDATE thread
+SET matrix_id = NULL
+WHERE id = $1;
+
 -- name: RemoveMailMatrixIdsByThread :exec
 UPDATE mail
 SET matrix_id = NULL
@@ -122,10 +132,19 @@ ORDER BY thread.last_message DESC;
 SELECT * FROM room
 WHERE id = $1 LIMIT 1;
 
+-- name: GetRooms :many
+SELECT * FROM room
+WHERE id = ANY($1::text[]);
+
 -- name: AddRoom :exec
 INSERT INTO room (id)
 VALUES ($1)
 ON CONFLICT (id) DO NOTHING;
+
+-- name: UpdateRoomName :exec
+UPDATE room
+SET name = $2, name_last_update = CURRENT_TIMESTAMP
+WHERE id = $1;
 
 -- name: UpdateRoomOverviewMessage :exec
 UPDATE room

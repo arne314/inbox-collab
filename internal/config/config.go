@@ -3,6 +3,8 @@ package config
 import (
 	"flag"
 	"fmt"
+	"iter"
+	"maps"
 	"os"
 	"regexp"
 	"strings"
@@ -55,7 +57,7 @@ type MatrixConfig struct {
 	RoomsOverview map[Room][]Room   `toml:"overview"`
 	HeadBlacklist []string          `toml:"head_blacklist"`
 
-	RoomsOverviewInv   map[string][]string // target -> overview rooms
+	roomsOverviewInv   map[string][]string // target -> overview rooms
 	RoomsAddrFromRegex map[*regexp.Regexp]string
 	RoomsAddrToRegex   map[*regexp.Regexp]string
 	RoomsMailboxRegex  map[*regexp.Regexp]string
@@ -86,14 +88,28 @@ func (c *MatrixConfig) AliasOfRoom(roomId string) string {
 	return roomId // fallback
 }
 
-func (c *MatrixConfig) AllRooms() []string {
-	res := make([]string, len(roomAliasesInv))
-	idx := 0
-	for room := range roomAliasesInv {
-		res[idx] = room
-		idx++
+func (c *MatrixConfig) allRoomsMergeDefault(rooms iter.Seq[string]) []string {
+	res := []string{}
+	addDefault := true
+	defaultRoom := c.DefaultRoom.String()
+	for room := range rooms {
+		res = append(res, room)
+		if room == defaultRoom {
+			addDefault = false
+		}
+	}
+	if addDefault {
+		res = append(res, defaultRoom)
 	}
 	return res
+}
+
+func (c *MatrixConfig) AllRooms() (rooms []string) {
+	return c.allRoomsMergeDefault(maps.Keys(roomAliasesInv))
+}
+
+func (c *MatrixConfig) AllTargetRooms() (rooms []string) {
+	return c.allRoomsMergeDefault(maps.Keys(c.roomsOverviewInv))
 }
 
 func (c *MatrixConfig) GetOverviewRoomTargets(overviewRoom string) (targets []string) {
@@ -109,10 +125,10 @@ func (c *MatrixConfig) GetOverviewRoomTargets(overviewRoom string) (targets []st
 }
 
 func (c *MatrixConfig) GetOverviewRooms(target string) []string {
-	if rooms, ok := c.RoomsOverviewInv[target]; ok {
+	if rooms, ok := c.roomsOverviewInv[target]; ok {
 		return rooms
 	}
-	return c.RoomsOverviewInv[""]
+	return c.roomsOverviewInv[""]
 }
 
 func (c *MatrixConfig) AllOverviewRooms() (rooms []string) {
@@ -219,5 +235,5 @@ func (c *Config) Load() {
 		overview[Room(room)] = targetRooms
 	}
 	c.Matrix.RoomsOverview = overview
-	c.Matrix.RoomsOverviewInv = overviewInv
+	c.Matrix.roomsOverviewInv = overviewInv
 }

@@ -2,6 +2,8 @@ package db
 
 import (
 	"context"
+	"database/sql"
+	"errors"
 	"regexp"
 	"strings"
 	"time"
@@ -154,6 +156,20 @@ func (dh *DbHandler) GetReferencedThreadParent(ctx context.Context, mail *db.Mai
 	return rows[0]
 }
 
+func (dh *DbHandler) GetThreadByMatrixId(ctx context.Context, matrixId string) *db.Thread {
+	ctx, cancel := defaultContext(ctx)
+	defer cancel()
+	thread, err := dh.queries.GetThreadByMatrixId(ctx, pgtype.Text{String: matrixId, Valid: true})
+	if err != nil {
+		if !errors.Is(err, sql.ErrNoRows) {
+			log.Errorf("Error getting thread by matrix id: %v", err)
+		}
+		return nil
+	}
+	log.Info(thread)
+	return thread
+}
+
 func (dh *DbHandler) CreateThread(ctx context.Context, mail *db.Mail) {
 	ctx1, cancel1 := defaultContext(ctx)
 	defer cancel1()
@@ -291,27 +307,25 @@ func (dh *DbHandler) GetMatrixReadyMails(ctx context.Context) []*db.GetMatrixRea
 	return mails
 }
 
-func (dh *DbHandler) UpdateThreadMatrixIds(ctx context.Context, threadId int64, roomId string, messageId string) {
+func (dh *DbHandler) UpdateThreadMatrixIds(ctx context.Context, threadId int64, roomId string, messageId string) bool {
 	ctx, cancel := defaultContext(ctx)
 	defer cancel()
 	err := dh.queries.UpdateThreadMatrixIds(ctx, db.UpdateThreadMatrixIdsParams{
 		ID:           threadId,
-		MatrixID:     pgtype.Text{String: messageId, Valid: true},
-		MatrixRoomID: pgtype.Text{String: roomId, Valid: true},
+		MatrixID:     pgtype.Text{String: messageId, Valid: messageId != ""},
+		MatrixRoomID: pgtype.Text{String: roomId, Valid: roomId != ""},
 	})
 	if err != nil {
 		log.Errorf("Error updating thread matrix id: %v", err)
+		return false
 	}
+	return true
 }
 
-func (dh *DbHandler) RemoveMatrixIdsFromThread(ctx context.Context, threadId int64) bool {
+func (dh *DbHandler) RemoveMatrixMessageIdsOfThread(ctx context.Context, threadId int64) bool {
 	ctxThread, cancelThread := defaultContext(ctx)
 	defer cancelThread()
-	err := dh.queries.UpdateThreadMatrixIds(ctxThread, db.UpdateThreadMatrixIdsParams{
-		ID:           threadId,
-		MatrixID:     pgtype.Text{}, // null as Valid is false
-		MatrixRoomID: pgtype.Text{},
-	})
+	err := dh.queries.RemoveThreadMatrixId(ctxThread, threadId)
 	if err != nil {
 		log.Errorf("Error removing thread matrix id: %v", err)
 		return false
@@ -374,15 +388,41 @@ func (dh *DbHandler) AddAllRooms(ctx context.Context) {
 	}
 }
 
-func (dh *DbHandler) GetRoom(ctx context.Context, overviewRoom string) *db.Room {
+func (dh *DbHandler) GetRoom(ctx context.Context, roomId string) *db.Room {
 	ctx, cancel := defaultContext(ctx)
 	defer cancel()
-	room, err := dh.queries.GetRoom(ctx, overviewRoom)
+	room, err := dh.queries.GetRoom(ctx, roomId)
 	if err != nil {
 		log.Errorf("Error fetching room: %v", err)
 		return nil
 	}
 	return room
+}
+
+func (dh *DbHandler) GetRooms(ctx context.Context, roomIds []string) []*db.Room {
+	ctx, cancel := defaultContext(ctx)
+	defer cancel()
+	rooms, err := dh.queries.GetRooms(ctx, roomIds)
+	if err != nil {
+		log.Errorf("Error fetching rooms: %v", err)
+		return []*db.Room{}
+	}
+	return rooms
+}
+
+func (dh *DbHandler) UpdateRoomName(ctx context.Context, roomId string, name string) {
+	ctx, cancel := defaultContext(ctx)
+	defer cancel()
+	err := dh.queries.UpdateRoomName(
+		ctx,
+		db.UpdateRoomNameParams{
+			ID:   roomId,
+			Name: pgtype.Text{String: name, Valid: true},
+		},
+	)
+	if err != nil {
+		log.Errorf("Error updating matrix room name in db: %v", err)
+	}
 }
 
 func (dh *DbHandler) UpdateRoomOverviewMessage(ctx context.Context, roomId string, messageId string) {

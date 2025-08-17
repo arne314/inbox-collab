@@ -39,6 +39,10 @@ func (mh *MatrixHandler) WaitForRoomJoins() {
 	}
 }
 
+func (mh *MatrixHandler) GetRoomName(roomId string) (bool, string) {
+	return mh.client.GetRoomName(roomId)
+}
+
 func (mh *MatrixHandler) matchRoomsRegexps(regexps map[*regexp.Regexp]string, s string) string {
 	for regex, room := range regexps {
 		if regex.MatchString(s) {
@@ -69,10 +73,12 @@ func (mh *MatrixHandler) determineMatrixRoom(
 }
 
 func (mh *MatrixHandler) CreateThread(
-	fetcher string, addrFrom string, addrTo []string, author string, subject string,
+	fetcher string, addrFrom string, addrTo []string, author string, subject string, roomId string,
 ) (bool, string, string) {
 	textMessage, htmlMessage := formatAttribute(author, subject)
-	roomId := mh.determineMatrixRoom(fetcher, addrFrom, addrTo)
+	if roomId == "" { // if moved room is already set
+		roomId = mh.determineMatrixRoom(fetcher, addrFrom, addrTo)
+	}
 	ok, messageId := mh.client.SendRoomMessage(roomId, textMessage, htmlMessage)
 	return ok, roomId, messageId
 }
@@ -163,16 +169,23 @@ func (mh *MatrixHandler) RemoveThreadOverview(
 	return mh.client.RedactMessage(overviewRoomId, overviewMessageId)
 }
 
-func (mh *MatrixHandler) addThreadWarningLink(roomId, threadId, linkRoomId, linkMessageId, note string) bool {
+func (mh *MatrixHandler) linkOtherThread(roomId, threadId, linkRoomId, linkMessageId, noteTitle, note string) bool {
 	builder := NewTextHtmlBuilder()
 	link := formatMessageLink(linkRoomId, linkMessageId, mh.Config.HomeServer)
-	builder.Write(formatAttribute("⚠️ Warning", fmt.Sprintf("%v %v", note, link)))
+	builder.Write(formatAttribute(noteTitle, fmt.Sprintf("%v %v", note, link)))
 	ok, _, _ := mh.client.SendThreadMessage(roomId, threadId, builder.Text(), builder.Html(), true)
 	return ok
 }
 
-func (mh *MatrixHandler) NotifyRecreation(roomId, threadId, linkRoomId, linkMessageId string) bool {
-	return mh.addThreadWarningLink(roomId, threadId, linkRoomId, linkMessageId, "Due to message removal this thread has been recreated at")
+func (mh *MatrixHandler) NotifyRecreation(roomId, threadId, linkRoomId, linkMessageId string, intentionalMove bool) bool {
+	var note string
+	noteTitle := "⚠️ Warning"
+	if intentionalMove {
+		note = "This thread has been moved to"
+	} else {
+		note = "Due to message removal this thread has been recreated at"
+	}
+	return mh.linkOtherThread(roomId, threadId, linkRoomId, linkMessageId, noteTitle, note)
 }
 
 func (mh *MatrixHandler) Stop() {

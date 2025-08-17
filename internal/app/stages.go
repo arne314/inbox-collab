@@ -11,6 +11,12 @@ import (
 	model "github.com/arne314/inbox-collab/internal/db/generated"
 )
 
+type recreatedThreadHead struct {
+	roomId      string
+	threadId    string
+	intentional bool
+}
+
 func (ic *InboxCollab) performMessageExtraction(ctx context.Context, mail *model.Mail) {
 	ic.llm.ExtractMessages(ctx, mail)
 	if mail.Messages == nil || mail.Messages.Messages == nil {
@@ -115,13 +121,26 @@ func (ic *InboxCollab) setupMatrixNotificationsStage() {
 		if !ic.Config.Matrix.VerifySession {
 			ic.matrixHandler.WaitForRoomJoins()
 		}
+
+		go func(ctx context.Context) {
+		roomnameupdateloop:
+			for {
+				for _, roomId := range ic.Config.Matrix.AllRooms() {
+					ok, name := ic.matrixHandler.GetRoomName(roomId)
+					if ok {
+						ic.dbHandler.UpdateRoomName(ctx, roomId, name)
+					}
+				}
+				select {
+				case <-ctx.Done():
+					break roomnameupdateloop
+				case <-time.After(5 * time.Minute):
+				}
+			}
+		}(ctx)
 	}
-	type threadHead struct {
-		roomId    string
-		messageId string
-	}
+
 	touchedRooms := []string{}
-	recreatedThreads := make(map[int64]*threadHead) // threadId -> old head
 
 	work := func(ctx context.Context) bool {
 		if ic.Config.Matrix.VerifySession {
@@ -136,7 +155,7 @@ func (ic *InboxCollab) setupMatrixNotificationsStage() {
 		for _, thread := range threads {
 			ok, roomId, messageId := ic.matrixHandler.CreateThread(
 				thread.Fetcher.String, thread.AddrFrom, thread.AddrTo,
-				thread.NameFrom, thread.Subject,
+				thread.NameFrom, thread.Subject, thread.MatrixRoomID.String,
 			)
 			if !ok {
 				return false
@@ -144,9 +163,13 @@ func (ic *InboxCollab) setupMatrixNotificationsStage() {
 			ic.dbHandler.UpdateThreadMatrixIds(ctx, thread.ID, roomId, messageId)
 			touchedRooms = append(touchedRooms, roomId)
 
-			if head, ok := recreatedThreads[thread.ID]; ok {
-				if ic.matrixHandler.NotifyRecreation(head.roomId, head.messageId, roomId, messageId) {
-					delete(recreatedThreads, thread.ID)
+			if v, ok := recreatedThreads.Load(thread.ID); ok {
+				if head, ok := v.(*recreatedThreadHead); ok {
+					if ic.matrixHandler.NotifyRecreation(head.roomId, head.threadId, roomId, messageId, head.intentional) {
+						recreatedThreads.Delete(thread.ID)
+					}
+				} else {
+					log.Errorf("Invalid type for recreated thread %v", v)
 				}
 			}
 		}
@@ -159,11 +182,11 @@ func (ic *InboxCollab) setupMatrixNotificationsStage() {
 				mail.Subject, mail.Timestamp.Time, mail.Attachments,
 				*mail.Messages, mail.IsFirst,
 			)
-			if redacted && ic.dbHandler.RemoveMatrixIdsFromThread(ctx, mail.Thread.Int64) {
+			if redacted && ic.dbHandler.RemoveMatrixMessageIdsOfThread(ctx, mail.Thread.Int64) {
 				log.Infof("Thread head of mail %v has been redacted, queueing recreation...", mail.ID)
-				recreatedThreads[mail.Thread.Int64] = &threadHead{
-					roomId: mail.RootMatrixRoomID.String, messageId: mail.RootMatrixID.String,
-				}
+				recreatedThreads.Store(mail.Thread.Int64, &recreatedThreadHead{
+					roomId: mail.RootMatrixRoomID.String, threadId: mail.RootMatrixID.String,
+				})
 			}
 			if !ok {
 				return false
@@ -173,7 +196,7 @@ func (ic *InboxCollab) setupMatrixNotificationsStage() {
 		}
 		updateOverview := len(threads) > 0 || len(mails) > 0
 		if updateOverview {
-			ic.QueueMatrixOverviewUpdate(touchedRooms)
+			ic.QueueMatrixOverviewUpdate(touchedRooms, false)
 		}
 		return true
 	}
@@ -181,7 +204,7 @@ func (ic *InboxCollab) setupMatrixNotificationsStage() {
 }
 
 // touchedRooms: rooms that have been updated (overview rooms will be determined by this function)
-func (ic *InboxCollab) QueueMatrixOverviewUpdate(touchedRooms []string) {
+func (ic *InboxCollab) QueueMatrixOverviewUpdate(touchedRooms []string, blocking bool) {
 	notify := make(map[string]bool)
 	for _, target := range touchedRooms {
 		for _, room := range ic.Config.Matrix.GetOverviewRooms(target) {
@@ -190,11 +213,21 @@ func (ic *InboxCollab) QueueMatrixOverviewUpdate(touchedRooms []string) {
 			}
 		}
 	}
+	var wg sync.WaitGroup
 	for room := range notify {
 		if stage, ok := MatrixOverviewStages[room]; ok {
-			stage.QueueWork()
+			if blocking {
+				wg.Add(1)
+				go func(stage *PipelineStage) {
+					stage.QueueWorkBlocking()
+					wg.Done()
+				}(stage)
+			} else {
+				stage.QueueWork()
+			}
 		}
 	}
+	wg.Wait()
 }
 
 func (ic *InboxCollab) setupMatrixOverviewStage() {
