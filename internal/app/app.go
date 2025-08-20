@@ -36,6 +36,12 @@ type InboxCollab struct {
 	fetchedMails chan []*mail.Mail
 }
 
+type recreatedThreadHead struct {
+	roomId      string
+	threadId    string
+	intentional bool
+}
+
 type FetcherStateStorageImpl struct {
 	getState  func(ctx context.Context, id string) (uint32, uint32)
 	saveState func(ctx context.Context, id string, uidLast uint32, uidValidity uint32)
