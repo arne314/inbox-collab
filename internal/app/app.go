@@ -15,6 +15,7 @@ import (
 	model "github.com/arne314/inbox-collab/internal/db/generated"
 	"github.com/arne314/inbox-collab/internal/mail"
 	"github.com/arne314/inbox-collab/internal/matrix"
+	textprocessor "github.com/arne314/inbox-collab/internal/textprocessor"
 )
 
 var (
@@ -30,7 +31,7 @@ type InboxCollab struct {
 	dbHandler     *db.DbHandler
 	matrixHandler *matrix.MatrixHandler
 	mailHandler   *mail.MailHandler
-	llm           *LLM
+	llm           *textprocessor.LLM
 
 	fetchedMails chan []*mail.Mail
 }
@@ -56,7 +57,7 @@ func (ic *InboxCollab) Setup(
 	ic.dbHandler = dbHandler
 	ic.mailHandler = mailHandler
 	ic.matrixHandler = matrixHandler
-	ic.llm = &LLM{config: ic.Config.LLM}
+	ic.llm = &textprocessor.LLM{Config: ic.Config.LLM}
 	ic.fetchedMails = make(chan []*mail.Mail, 100)
 
 	waitGroup := &sync.WaitGroup{}

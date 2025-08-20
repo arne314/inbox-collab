@@ -1,4 +1,4 @@
-package app
+package textprocessor
 
 import (
 	"bytes"
@@ -16,7 +16,7 @@ import (
 )
 
 type LLM struct {
-	config *cfg.LLMConfig
+	Config *cfg.LLMConfig
 }
 
 type ParseMessagesRequest struct {
@@ -31,7 +31,7 @@ func (llm *LLM) apiRequest(ctx context.Context, endpoint string, body []byte) ([
 	req, err := http.NewRequestWithContext(
 		ctx,
 		http.MethodPost,
-		llm.config.ApiUrl+"/"+endpoint,
+		llm.Config.ApiUrl+"/"+endpoint,
 		bytes.NewBuffer(body),
 	)
 	if err != nil {
