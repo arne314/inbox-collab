@@ -12,7 +12,7 @@ func (ic *InboxCollab) setupThreadSortingStage() {
 		timeSinceMailboxUpdate := time.Since(ic.mailHandler.GetLastMailboxUpdate()).Seconds()
 		timeSinceSortRequest := ThreadSortingStage.TimeSinceQueued().Seconds()
 		waitForCompleteData := timeSinceMailboxUpdate < 10 && timeSinceSortRequest < 120 // timeout
-		if MessageExtractionStage.Working() || waitForCompleteData {
+		if waitForCompleteData {
 			log.Infof("Waiting for complete data to sort threads...")
 			time.Sleep(2 * time.Second)
 			return false
@@ -58,11 +58,11 @@ func (ic *InboxCollab) setupThreadSortingStage() {
 			}
 		}
 		log.Infof("Done sorting %v mails", len(mails))
-		MatrixNotificationStage.QueueWork()
+		MessageExtractionStage.QueueWork()
 		return true
 	}
 	ThreadSortingStage = NewStage(
 		"ThreadSorting", nil, work,
-		false, // initial queueing happens in message extraction stage
+		false, // initial queueing happens in storeMails()
 	)
 }

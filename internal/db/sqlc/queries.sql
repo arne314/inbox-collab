@@ -12,13 +12,19 @@ VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
 ON CONFLICT (header_id) DO NOTHING
 RETURNING *;
 
+-- name: GetMailsByThread :many
+SELECT * FROM mail
+WHERE thread = $1
+ORDER BY timestamp;
+
 -- name: GetMailsRequiringMessageExtraction :many
 SELECT * FROM mail
-WHERE messages ->> 'messages' IS NULL;
+WHERE sorted AND thread IS NOT NULL AND messages ->> 'messages' IS NULL
+ORDER BY thread, timestamp;
 
 -- name: GetMailsRequiringSorting :many
 SELECT * FROM mail
-WHERE NOT sorted AND messages ->> 'messages' IS NOT NULL
+WHERE NOT sorted
 ORDER BY timestamp;
 
 -- name: GetReferencedThreadParent :many
@@ -91,6 +97,7 @@ SELECT thread.id, thread.matrix_room_id, mail.fetcher,
 mail.addr_from, mail.addr_to, mail.subject, mail.name_from FROM thread
 JOIN mail ON thread.first_mail = mail.id
 WHERE thread.matrix_id IS NULL
+AND mail.messages ->> 'messages' IS NOT NULL
 ORDER BY mail.timestamp;
 
 -- name: GetMatrixReadyMails :many
@@ -99,6 +106,7 @@ thread.matrix_id AS root_matrix_id, thread.matrix_room_id AS root_matrix_room_id
 FROM mail
 JOIN thread ON mail.thread = thread.id
 WHERE mail.matrix_id IS NULL AND thread.matrix_id IS NOT NULL
+AND mail.messages ->> 'messages' IS NOT NULL
 ORDER BY mail.timestamp;
 
 -- name: UpdateThreadMatrixIds :exec

@@ -53,7 +53,7 @@ func (llm *LLM) apiRequest(ctx context.Context, endpoint string, body []byte) ([
 	return data, nil
 }
 
-func (llm *LLM) ExtractMessages(ctx context.Context, mail *model.Mail) {
+func (llm *LLM) extractMessages(ctx context.Context, mail *model.Mail) *db.ExtractedMessages {
 	data := ParseMessagesRequest{
 		Conversation:     *mail.Body,
 		Subject:          mail.Subject,
@@ -64,14 +64,14 @@ func (llm *LLM) ExtractMessages(ctx context.Context, mail *model.Mail) {
 	encoded, err := json.Marshal(data)
 	if err != nil {
 		log.Errorf("Error enconding json: %v", err)
-		return
+		return nil
 	}
 	response, err := llm.apiRequest(ctx, "parse_messages", encoded)
 	if err != nil {
 		log.Errorf("Error requesting llm api: %v", err)
-		return
+		return nil
 	}
 	result := &db.ExtractedMessages{}
 	json.Unmarshal(response, result)
-	mail.Messages = result
+	return result
 }

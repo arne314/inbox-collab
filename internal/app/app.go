@@ -27,11 +27,11 @@ var (
 )
 
 type InboxCollab struct {
-	Config        *cfg.Config
-	dbHandler     *db.DbHandler
-	matrixHandler *matrix.MatrixHandler
-	mailHandler   *mail.MailHandler
-	llm           *textprocessor.LLM
+	Config           *cfg.Config
+	dbHandler        *db.DbHandler
+	matrixHandler    *matrix.MatrixHandler
+	mailHandler      *mail.MailHandler
+	messageExtractor *textprocessor.MessageExtractor
 
 	fetchedMails chan []*mail.Mail
 }
@@ -63,7 +63,7 @@ func (ic *InboxCollab) Setup(
 	ic.dbHandler = dbHandler
 	ic.mailHandler = mailHandler
 	ic.matrixHandler = matrixHandler
-	ic.llm = &textprocessor.LLM{Config: ic.Config.LLM}
+	ic.messageExtractor = textprocessor.NewMessageExtractor(ic.Config.LLM)
 	ic.fetchedMails = make(chan []*mail.Mail, 100)
 
 	waitGroup := &sync.WaitGroup{}
@@ -107,7 +107,7 @@ func (ic *InboxCollab) storeMails(waitGroup *sync.WaitGroup) {
 		nFetched := ic.dbHandler.AddMails(ctx, modelled)
 		if nFetched > 0 || initial {
 			log.Infof("Added %v new messages to db", nFetched)
-			MessageExtractionStage.QueueWork()
+			ThreadSortingStage.QueueWork()
 			initial = false
 		}
 	}

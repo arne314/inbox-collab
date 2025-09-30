@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
 	"regexp"
 	"strings"
 	"time"
@@ -102,15 +103,21 @@ func getMails(ctx context.Context, query getMailsQuery, mailTypeLogMsg string) [
 	return mails
 }
 
+func (dh *DbHandler) GetMailsByThread(ctx context.Context, threadId pgtype.Int8) []*db.Mail {
+	if !threadId.Valid {
+		return []*db.Mail{}
+	}
+	get := func(ctx context.Context) ([]*db.Mail, error) {
+		return dh.queries.GetMailsByThread(ctx, threadId)
+	}
+	return getMails(ctx, get, fmt.Sprintf("in thread %v", threadId.Int64))
+}
+
 func (dh *DbHandler) GetMailsRequiringMessageExtraction(ctx context.Context) []*db.Mail {
-	ctx, cancel := defaultContext(ctx)
-	defer cancel()
 	return getMails(ctx, dh.queries.GetMailsRequiringMessageExtraction, "requiring message extraction")
 }
 
 func (dh *DbHandler) GetMailsRequiringSorting(ctx context.Context) []*db.Mail {
-	ctx, cancel := defaultContext(ctx)
-	defer cancel()
 	return getMails(ctx, dh.queries.GetMailsRequiringSorting, "requiring sorting")
 }
 
@@ -166,7 +173,6 @@ func (dh *DbHandler) GetThreadByMatrixId(ctx context.Context, matrixId string) *
 		}
 		return nil
 	}
-	log.Info(thread)
 	return thread
 }
 

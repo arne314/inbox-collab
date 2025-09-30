@@ -10,10 +10,12 @@ import (
 )
 
 func (ic *InboxCollab) performMessageExtraction(ctx context.Context, mail *model.Mail) {
-	ic.llm.ExtractMessages(ctx, mail)
-	if mail.Messages == nil || mail.Messages.Messages == nil {
+	history := ic.dbHandler.GetMailsByThread(ctx, mail.Thread)
+	extracted := ic.messageExtractor.ExtractMessages(ctx, mail, history)
+	if extracted == nil || extracted.Messages == nil {
 		log.Errorf("Error extracting messages for mail %v", mail.ID)
 	} else {
+		mail.Messages = extracted
 		ic.dbHandler.UpdateExtractedMessages(ctx, mail)
 	}
 }
@@ -38,11 +40,8 @@ func (ic *InboxCollab) setupMessageExtractionStage() {
 		}
 		wg.Wait()
 		log.Infof("Done extracting messages from %v mails", len(mails))
-		ThreadSortingStage.QueueWork()
+		MatrixNotificationStage.QueueWork()
 		return true
 	}
-	MessageExtractionStage = NewStage(
-		"MessageExtraction", nil, work,
-		false, // initial queueing happens in storeMails()
-	)
+	MessageExtractionStage = NewStage("MessageExtraction", nil, work, true)
 }

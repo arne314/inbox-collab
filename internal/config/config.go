@@ -206,6 +206,7 @@ func (c *Config) Load() {
 			}
 		}
 	}
+	c.Matrix.DefaultRoom = resolveRoomValue(c.Matrix.DefaultRoom)
 	c.Matrix.RoomsAddrFromRegex = make(map[*regexp.Regexp]string)
 	c.Matrix.RoomsAddrToRegex = make(map[*regexp.Regexp]string)
 	c.Matrix.RoomsMailboxRegex = make(map[*regexp.Regexp]string)
@@ -216,7 +217,7 @@ func (c *Config) Load() {
 	// load overview config
 	roomsOverview := make(map[string][]string)
 	roomsOverviewInv = make(map[string][]string)
-	c.Matrix.RoomsOverview[""] = []string{resolveRoomValue(c.Matrix.DefaultRoom)} // also a target
+	c.Matrix.RoomsOverview[""] = []string{c.Matrix.DefaultRoom} // also a target
 
 	// handle aliases and populate lists
 	roomsWithFullOverview := []string{} // rooms that provide an overview over all rooms
