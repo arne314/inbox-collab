@@ -236,9 +236,55 @@ func (q *Queries) GetMail(ctx context.Context, id int64) (*GetMailRow, error) {
 	return &i, err
 }
 
+const getMailsByThread = `-- name: GetMailsByThread :many
+SELECT id, fetcher, header_id, header_in_reply_to, header_references, timestamp, name_from, addr_from, addr_to, subject, body, attachments, messages, messages_last_update, sorted, reply_to, thread, matrix_id FROM mail
+WHERE thread = $1
+ORDER BY timestamp
+`
+
+func (q *Queries) GetMailsByThread(ctx context.Context, thread pgtype.Int8) ([]*Mail, error) {
+	rows, err := q.db.Query(ctx, getMailsByThread, thread)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []*Mail
+	for rows.Next() {
+		var i Mail
+		if err := rows.Scan(
+			&i.ID,
+			&i.Fetcher,
+			&i.HeaderID,
+			&i.HeaderInReplyTo,
+			&i.HeaderReferences,
+			&i.Timestamp,
+			&i.NameFrom,
+			&i.AddrFrom,
+			&i.AddrTo,
+			&i.Subject,
+			&i.Body,
+			&i.Attachments,
+			&i.Messages,
+			&i.MessagesLastUpdate,
+			&i.Sorted,
+			&i.ReplyTo,
+			&i.Thread,
+			&i.MatrixID,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, &i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const getMailsRequiringMessageExtraction = `-- name: GetMailsRequiringMessageExtraction :many
 SELECT id, fetcher, header_id, header_in_reply_to, header_references, timestamp, name_from, addr_from, addr_to, subject, body, attachments, messages, messages_last_update, sorted, reply_to, thread, matrix_id FROM mail
-WHERE messages ->> 'messages' IS NULL
+WHERE sorted AND thread IS NOT NULL AND messages ->> 'messages' IS NULL
+ORDER BY thread, timestamp
 `
 
 func (q *Queries) GetMailsRequiringMessageExtraction(ctx context.Context) ([]*Mail, error) {
@@ -282,7 +328,7 @@ func (q *Queries) GetMailsRequiringMessageExtraction(ctx context.Context) ([]*Ma
 
 const getMailsRequiringSorting = `-- name: GetMailsRequiringSorting :many
 SELECT id, fetcher, header_id, header_in_reply_to, header_references, timestamp, name_from, addr_from, addr_to, subject, body, attachments, messages, messages_last_update, sorted, reply_to, thread, matrix_id FROM mail
-WHERE NOT sorted AND messages ->> 'messages' IS NOT NULL
+WHERE NOT sorted
 ORDER BY timestamp
 `
 
@@ -331,6 +377,7 @@ thread.matrix_id AS root_matrix_id, thread.matrix_room_id AS root_matrix_room_id
 FROM mail
 JOIN thread ON mail.thread = thread.id
 WHERE mail.matrix_id IS NULL AND thread.matrix_id IS NOT NULL
+AND mail.messages ->> 'messages' IS NOT NULL
 ORDER BY mail.timestamp
 `
 
@@ -405,6 +452,7 @@ SELECT thread.id, thread.matrix_room_id, mail.fetcher,
 mail.addr_from, mail.addr_to, mail.subject, mail.name_from FROM thread
 JOIN mail ON thread.first_mail = mail.id
 WHERE thread.matrix_id IS NULL
+AND mail.messages ->> 'messages' IS NOT NULL
 ORDER BY mail.timestamp
 `
 
