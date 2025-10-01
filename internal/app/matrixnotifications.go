@@ -68,7 +68,24 @@ func (ic *InboxCollab) setupMatrixNotificationsStage() {
 
 		// add messages to threads
 		mails := ic.dbHandler.GetMatrixReadyMails(ctx)
+		targetThreadValid := make(map[int64]bool)
+		for _, m := range mails {
+			targetThreadValid[m.Thread.Int64] = false
+		}
+	findValid:
+		for t := range targetThreadValid {
+			history := ic.dbHandler.GetMailsByThread(ctx, t)
+			for _, m := range history {
+				if m.Messages == nil {
+					continue findValid
+				}
+			}
+			targetThreadValid[t] = true
+		}
 		for _, mail := range mails {
+			if !targetThreadValid[mail.Thread.Int64] {
+				continue
+			}
 			ok, redacted, matrixId := ic.matrixHandler.AddReply(
 				mail.RootMatrixRoomID.String, mail.RootMatrixID.String, mail.NameFrom,
 				mail.Subject, mail.Timestamp.Time, mail.Attachments,

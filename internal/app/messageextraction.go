@@ -10,7 +10,7 @@ import (
 )
 
 func (ic *InboxCollab) performMessageExtraction(ctx context.Context, mail *model.Mail) {
-	history := ic.dbHandler.GetMailsByThread(ctx, mail.Thread)
+	history := ic.dbHandler.GetMailsByThread(ctx, mail.Thread.Int64)
 	extracted := ic.messageExtractor.ExtractMessages(ctx, mail, history)
 	if extracted == nil || extracted.Messages == nil {
 		log.Errorf("Error extracting messages for mail %v", mail.ID)

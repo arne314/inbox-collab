@@ -103,14 +103,11 @@ func getMails(ctx context.Context, query getMailsQuery, mailTypeLogMsg string) [
 	return mails
 }
 
-func (dh *DbHandler) GetMailsByThread(ctx context.Context, threadId pgtype.Int8) []*db.Mail {
-	if !threadId.Valid {
-		return []*db.Mail{}
-	}
+func (dh *DbHandler) GetMailsByThread(ctx context.Context, threadId int64) []*db.Mail {
 	get := func(ctx context.Context) ([]*db.Mail, error) {
-		return dh.queries.GetMailsByThread(ctx, threadId)
+		return dh.queries.GetMailsByThread(ctx, pgtype.Int8{Int64: threadId, Valid: true})
 	}
-	return getMails(ctx, get, fmt.Sprintf("in thread %v", threadId.Int64))
+	return getMails(ctx, get, fmt.Sprintf("in thread %v", threadId))
 }
 
 func (dh *DbHandler) GetMailsRequiringMessageExtraction(ctx context.Context) []*db.Mail {
