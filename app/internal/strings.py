@@ -23,19 +23,24 @@ A valid output (this is just an example conversation) would look like this:
     "messages": [
         {{
             "author": "Sarah Thompson",
-            "content": Thursday morning works great. Let’s schedule it for 10 AM. Looking forward to catching up!\n\nBest,\nSarah",
+            "content": "Thursday morning works great. Let’s schedule it for 10 AM. Looking forward to catching up!\n\nBest,\nSarah",
             "timestamp": "2020-03-14T15:15"
         }},
-        [
+        {{
             "author": "John Miller",
-            "content": Hi Sarah,\n\nThanks for reaching out! I’m available on Wednesday at 2 PM or Thursday morning. Let me know if either of those times works for you.\n\nBest,\nJohn",
+            "content": "Hi Sarah,\n\nThanks for reaching out! I’m available on Wednesday at 2 PM or Thursday morning. Let me know if either of those times works for you.\n\nBest,\nJohn",
             "timestamp": "2020-03-14T15:00" # as in the reply header
-        ],
-        [
+        }},
+        {{
             "author": "Sarah Thompson",
-            "content": "Hi John,\nI hope you're doing well. I wanted to check in and see if you have time this week for a quick meeting to discuss the progress on the project. Let me know when would work best for you.\n\nBest,\nSarah Thompson"
+            "content": "[[KEEP14827]]"
             "timestamp": "2020-03-14T10:25"
-        ] # depending on the input this might go on forever
+        }},
+        {{
+            "author": "John Miller",
+            "content": "[[KEEP13895]]"
+            "timestamp": "2020-03-14T10:10"
+        }}, # depending on the input this might go on
     ],
     {forward_format2}
 }}

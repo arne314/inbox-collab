@@ -1,3 +1,4 @@
+import re
 from datetime import datetime
 from typing import List
 
@@ -14,6 +15,8 @@ from .strings import (
     template_task_single,
 )
 
+placeholder_regex = re.compile(r"I got number \[\[KEEP\d{5}\]\]")
+
 
 class MessageSchema(BaseModel):
     author: str = Field(..., description="Message author")
@@ -24,11 +27,16 @@ class MessageSchema(BaseModel):
     def serialize_timestamp(self, value: datetime) -> str:
         return value.astimezone().isoformat()
 
+    def is_placeholder(self) -> bool:
+        if placeholder_regex.search(self.content):
+            return True
+        return False
+
 
 class ResponseSchema(BaseModel):
     messages: List[MessageSchema] = Field(
         ...,
-        description="Ordered list of Tuples containing the author of the message and then the message itself",
+        description="Ordered list message objects containing the author of the message and then the message itself",
     )
     forwarded: bool = Field(default=False, description="Whether the conversation was forwarded")
     forwarded_by: str | None = Field(default=None, description="Person who forwarded the mail")
@@ -40,6 +48,8 @@ class BaseParser(PydanticOutputParser):
 
     def parse(self, text):  # additional data validation and processing
         parsed: ResponseSchema = super().parse(text)
+        if not parsed.messages:
+            raise OutputParserException("Please extract at least one message")
         if all(msg.timestamp is None for msg in parsed.messages):
             raise OutputParserException(
                 "Please set the `timestamp` of the most recent message to the one given in the prompt"
@@ -54,12 +64,23 @@ class BaseParser(PydanticOutputParser):
             raise OutputParserException(
                 "Please set the `forwarded` boolean and `forwarded_by` string according to the given conversation"
             )
-        parsed.messages.sort(
-            key=lambda m: m.timestamp if m.timestamp is not None else datetime.fromtimestamp(0),
-            reverse=True,  # most recent message first
-        )
         if not parsed.forwarded:
             parsed.forwarded_by = None
+        # put most recent message first
+        parsed.messages.sort(
+            key=lambda m: m.timestamp if m.timestamp is not None else datetime.fromtimestamp(0),
+            reverse=True,
+        )
+        # make sure the first message is not a placeholder
+        if parsed.messages[0].is_placeholder():
+            for i, message in enumerate(parsed.messages):
+                if not message.is_placeholder():
+                    parsed.messages[0], parsed.messages[i] = parsed.messages[i], parsed.messages[0]
+                    break
+            else:
+                raise OutputParserException(
+                    "You missed the message without a placeholder. Please include it."
+                )
         return parsed
 
 

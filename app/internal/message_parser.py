@@ -117,9 +117,7 @@ class MessageParser:
 
             try:
                 parsed: ResponseSchema = await self.fixing_parser.ainvoke(output)
-                if len(parsed.messages) == 1:
-                    parsed.messages[0].timestamp = timestamp
-
+                parsed.messages[0].timestamp = timestamp
                 print("Message extraction successful")
                 if self.debug:
                     for i, msg in enumerate(parsed.messages):

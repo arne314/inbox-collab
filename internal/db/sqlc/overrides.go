@@ -13,5 +13,5 @@ type Message struct {
 type ExtractedMessages struct {
 	Messages    []*Message `json:"messages"`
 	Forwarded   bool       `json:"forwarded"`
-	ForwardedBy *string    `json:"forwarded_by"`
+	ForwardedBy string     `json:"forwarded_by"`
 }
