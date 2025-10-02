@@ -33,12 +33,12 @@ A valid output (this is just an example conversation) would look like this:
         }},
         {{
             "author": "Sarah Thompson",
-            "content": "[[KEEP14827]]"
+            "content": "=== PLACEHOLDER ==="
             "timestamp": "2020-03-14T10:25"
         }},
         {{
             "author": "John Miller",
-            "content": "[[KEEP13895]]"
+            "content": "=== PLACEHOLDER ==="
             "timestamp": "2020-03-14T10:10"
         }}, # depending on the input this might go on
     ],
@@ -88,7 +88,7 @@ For the target format, please note:
   sender and receiver email addresses, imprints/signatures/footers and information about the mail client
 - Exclude all kinds of email-specific formatting such as `>` at the start of replies
 - Include the greetings as well as the PS (postscriptum) if given
-- Directly copy the original message text; don't remove line breaks (blank lines); don't fix grammar errors and don't change the original language
+- Directly copy the original message text; don't remove line breaks; don't fix grammar errors and don't change the original language
 """
 
 template_post = """

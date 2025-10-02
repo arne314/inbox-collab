@@ -15,7 +15,7 @@ from .strings import (
     template_task_single,
 )
 
-placeholder_regex = re.compile(r"I got number \[\[KEEP\d{5}\]\]")
+placeholder_regex = re.compile(r"==\s*PLACEHOLDER\s*==")
 
 
 class MessageSchema(BaseModel):
