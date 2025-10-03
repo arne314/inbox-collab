@@ -61,3 +61,52 @@ func TestNormalizeText(t *testing.T) {
 		})
 	}
 }
+
+func Test_computeMessageChunks(t *testing.T) {
+	tests := []struct {
+		name    string
+		content string
+		want    []string
+	}{
+		{
+			"simple",
+			"a simple chunk",
+			[]string{"a", "simple", "chunk"},
+		},
+		{
+			"lines",
+			"a\nfew\nlines",
+			[]string{"a", "few", "lines"},
+		},
+		{
+			"spaces",
+			"    additional    spaces   don't \tcount\nover\r\rhere\n",
+			[]string{"additional", "spaces", "don't", "count", "over", "here"},
+		},
+		{
+			"single",
+			"s i n g l e",
+			[]string{"s", "i", "n", "g", "l", "e"},
+		},
+		{
+			"special",
+			"sp3cíal chäräctérs :) >> (-; 1+1",
+			[]string{"sp3cíal", "chäräctérs", ":)", ">>", "(-;", "1+1"},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := computeMessageChunks(&tt.content)
+			if len(got.chunks) != len(tt.want) {
+				t.Errorf("computeMessageChunks() has incorrect length %v, want %v", len(got.chunks), len(tt.want))
+				return
+			}
+			for i, chunk := range got.chunks {
+				st := chunkToString(got, chunk)
+				if st != tt.want[i] {
+					t.Errorf("computeMessageChunks()[%v] = %v, want %v", i, st, tt.want[i])
+				}
+			}
+		})
+	}
+}
