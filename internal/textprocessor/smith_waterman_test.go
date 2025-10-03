@@ -84,6 +84,13 @@ func Test_smithWaterman(t *testing.T) {
 			0,
 		},
 		{
+			"none",
+			"almost no match here",
+			"this is just different here",
+			"here",
+			0.1,
+		},
+		{
 			"caps",
 			"mAtcH",
 			"Match",
@@ -164,8 +171,15 @@ func Test_smithWaterman(t *testing.T) {
 			"gap_order",
 			"1 2 3 A B B C D E",
 			"A B C",
-			"A B B C", // instead of just "A B"
+			"A B B C", // instead of just "A B" or "B C"
 			0.8,
+		},
+		{
+			"gap_order",
+			"1 2 3 A B B C C D E",
+			"A B C D",
+			"A B B C C D", // instead of shorter substrings
+			0.7,
 		},
 	}
 	for _, tt := range tests {

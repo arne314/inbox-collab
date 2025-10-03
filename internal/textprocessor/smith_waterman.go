@@ -46,6 +46,15 @@ func computeMessageChunks(s *string) *message {
 	return result
 }
 
+type direction byte
+
+const (
+	stop direction = iota
+	diagonal
+	top
+	left
+)
+
 // compute best alignment of block inside base string
 func smithWaterman(base *message, block *message) (similarity float32, start int, end int) {
 	n := len(base.chunks)
@@ -54,78 +63,78 @@ func smithWaterman(base *message, block *message) (similarity float32, start int
 		return 0, 0, 0
 	}
 
-	// init scoring matrix
-	matrix := make([][]float32, n)
+	// init matrices
+	score := make([][]float32, n)
+	trace := make([][]direction, n)
 	for i := range n {
-		matrix[i] = make([]float32, m)
+		score[i] = make([]float32, m)
+		trace[i] = make([]direction, m)
 	}
 
-	// fill scoring matrix
+	// fill matrices
 	var baseChunk *chunk
 	var blockChunk *chunk
-	var top, left, diag float32
+	var valueTop, valueLeft, valueDiag float32
 	var bestI, bestJ int
 	for i := range n {
 		baseChunk = base.chunks[i]
 		for j := range m {
 			blockChunk = block.chunks[j]
 			// we consider a gap in the base worse than a gap in the block
-			top = -0.5
-			left = -2
+			valueTop = -0.5
+			valueLeft = -2
 			if baseChunk.normPunct == blockChunk.normPunct {
-				diag = 1
+				valueDiag = 1
 			} else if baseChunk.norm == blockChunk.norm {
-				diag = 0.8
+				valueDiag = 0.8
 			} else {
-				diag = -1
+				valueDiag = -1
 			}
 			if i-1 >= 0 {
-				top += matrix[i-1][j]
+				valueTop += score[i-1][j]
 				// we consider additional words worse than other additional chunks
 				if base.chunks[i-1].norm == "" {
-					top += 0.4
+					valueTop += 0.4
 				}
 			}
 			if j-1 >= 0 {
-				left += matrix[i][j-1]
+				valueLeft += score[i][j-1]
 				// see above
 				if block.chunks[j-1].norm == "" {
-					left += 0.4
+					valueLeft += 0.4
 				}
 			}
 			if i-1 >= 0 && j-1 >= 0 {
-				diag += matrix[i-1][j-1]
+				valueDiag += score[i-1][j-1]
 			}
-			matrix[i][j] = max(0, top, left, diag)
-			if matrix[i][j] >= matrix[bestI][bestJ] {
+			score[i][j] = max(0, valueTop, valueLeft, valueDiag)
+			switch score[i][j] {
+			case 0: // stop is the initial value
+			case valueDiag:
+				trace[i][j] = diagonal
+			case valueTop:
+				trace[i][j] = top
+			case valueLeft:
+				trace[i][j] = left
+			}
+			if score[i][j] >= score[bestI][bestJ] {
 				bestI = i
 				bestJ = j
 			}
 		}
 	}
 
-	if matrix[bestI][bestJ] == 0 {
+	if score[bestI][bestJ] == 0 {
 		return 0, 0, 0
 	}
 
 	// traceback
 	i, j := bestI, bestJ
-traceback:
-	for i >= 0 || j >= 0 {
-		top, left, diag = 0, 0, 0
-		if i-1 >= 0 {
-			top = matrix[i-1][j]
-		}
-		if j-1 >= 0 {
-			left = matrix[i][j-1]
-		}
-		if i-1 >= 0 && j-1 >= 0 {
-			diag = matrix[i-1][j-1]
-		}
-		switch max(0, top, left, diag) {
-		case 0:
-			break traceback
-		case diag:
+	prevI, prevJ := i, j
+	for i >= 0 && j >= 0 && trace[i][j] != stop {
+		prevI, prevJ = i, j
+		switch trace[i][j] {
+		case diagonal:
 			i--
 			j--
 		case top:
@@ -134,5 +143,6 @@ traceback:
 			j--
 		}
 	}
-	return matrix[bestI][bestJ] / float32(m), base.chunks[i].start, base.chunks[bestI].end
+	i, j = prevI, prevJ
+	return score[bestI][bestJ] / float32(m), base.chunks[i].start, base.chunks[bestI].end
 }
