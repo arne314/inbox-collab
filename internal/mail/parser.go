@@ -23,9 +23,10 @@ func (mf *MailFetcher) parseHeaderRegex(
 	}
 	matches := make([]string, len(parsed))
 	for i, match := range parsed {
-		matches[i] = match[1]
 		if lower {
-			matches[i] = strings.ToLower(matches[i])
+			matches[i] = strings.ToLower(match[1])
+		} else {
+			matches[i] = match[1]
 		}
 	}
 	slices.Sort(matches)
@@ -77,9 +78,9 @@ func (mf *MailFetcher) parseMessage(msg *imapclient.FetchMessageData) *Mail {
 		log.Errorf("Failed to parse date of mail for %v: %v", mf.name, err)
 		return nil
 	}
-	attachments := make([]string, 0)
-	for _, att := range envelope.Attachments {
-		attachments = append(attachments, att.FileName)
+	attachments := make([]string, len(envelope.Attachments))
+	for i, att := range envelope.Attachments {
+		attachments[i] = att.FileName
 	}
 	parsedMail := &Mail{
 		Fetcher:     mf.name,
