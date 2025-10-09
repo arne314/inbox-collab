@@ -13,7 +13,7 @@ import (
 func (ic *InboxCollab) performMessageExtraction(ctx context.Context, mail *model.Mail) {
 	history := ic.dbHandler.GetMailsByThread(ctx, mail.Thread.Int64)
 	history = slices.DeleteFunc(history, func(m *model.Mail) bool {
-		return m.ID == mail.ID
+		return m.ID == mail.ID || m.Timestamp.Time.After(mail.Timestamp.Time)
 	})
 	extracted := ic.messageExtractor.ExtractMessages(ctx, *mail, history)
 	if extracted == nil || extracted.Messages == nil {

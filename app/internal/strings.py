@@ -84,6 +84,7 @@ For the target format, please note:
 - There might not be a single message (just a signature); in this case, set `content` to an empty string
 {template_multiple}
 {template_forward}
+- Fully discard messages containing a `=== PLACEHOLDER ===` and ignore any data (such as timestamps) given in their header
 - Exclude all kinds of metadata such as email headers, symbols indicating the start/end of a new message,
   sender and receiver email addresses, imprints/signatures/footers and information about the mail client
 - Exclude all kinds of email-specific formatting such as `>` at the start of replies

@@ -22,18 +22,24 @@ func (me *MessageExtractor) ExtractMessages(ctx context.Context, mail model.Mail
 	// find and remove old contained messages (check latest ones first)
 	baseChunks := computeMessageChunks(mail.Body)
 	messageRemoved := make(map[*model.Mail]bool)
-	messageChunks := make(map[*model.Mail]*message)
-	for i := len(threadHistory) - 2; i >= 0; i-- { // we keep at least one reply to avoid removing too much (messages could have identical content)
+	messageSimilar := make(map[*model.Mail]bool)
+	oldMessageChunks := make(map[*model.Mail]*message)
+	for i := len(threadHistory) - 1; i >= 0; i-- { // keep at least one past message for content
 		old := threadHistory[i]
 		if old.Messages != nil {
 			var replaced *string
-			replaced, messageRemoved[old] = replaceBestBlockMatch(baseChunks, computeMessageChunks(old.Body))
-			if !messageRemoved[old] {
-				messageChunks[old] = computeMessageChunks(old.Messages.Messages[0].Content)
-			} else {
-				replacedChunks := computeMessageChunks(mail.Body)
-				baseChunks = replacedChunks
+			oldChunks := computeMessageChunks(old.Body)
+			oldMessageChunks[old] = computeMessageChunks(old.Messages.Messages[0].Content)
+			messageRemoved[old] = false
+			// we might have identical messages so we ignore them
+			if levenshtein(baseChunks, oldChunks) >= 0.8 {
+				messageSimilar[old] = true
+				continue
+			}
+			replaced, messageRemoved[old] = replaceBestBlockMatch(baseChunks, oldChunks)
+			if messageRemoved[old] {
 				mail.Body = replaced
+				baseChunks = computeMessageChunks(replaced)
 			}
 		}
 	}
@@ -44,19 +50,19 @@ func (me *MessageExtractor) ExtractMessages(ctx context.Context, mail model.Mail
 		return nil
 	}
 
-	// make sure the new message was not previously extracted
+	// detect new and known messsages
 	messageKnown := make(map[*db.Message]bool)
-	visited := make(map[*model.Mail]bool)
+	oldMessageKnown := make(map[*model.Mail]bool)
 	knownCount := 0
 detectKnown:
 	for _, ext := range extracted.Messages {
-		extractedMessage := computeMessageChunks(ext.Content)
+		extractedChunks := computeMessageChunks(ext.Content)
 		for old, removed := range messageRemoved {
-			if removed || visited[old] {
+			if removed || messageSimilar[old] || oldMessageKnown[old] {
 				continue
 			}
-			visited[old] = true
-			if similarity, _, _ := smithWaterman(extractedMessage, messageChunks[old]); similarity >= 0.9 {
+			if similarity := levenshtein(extractedChunks, oldMessageChunks[old]); similarity >= 0.9 {
+				oldMessageKnown[old] = true
 				messageKnown[ext] = true
 				knownCount++
 				continue detectKnown
@@ -64,7 +70,9 @@ detectKnown:
 		}
 		messageKnown[ext] = false
 	}
-	if messageKnown[extracted.Messages[0]] { // this is a problem
+
+	// make sure the first message is new
+	if messageKnown[extracted.Messages[0]] {
 		if knownCount != len(extracted.Messages) {
 			for _, ext := range extracted.Messages {
 				// swap first with an unknown message
