@@ -4,13 +4,14 @@ import (
 	"context"
 	"slices"
 	"sync"
+	"time"
 
 	log "github.com/sirupsen/logrus"
 
 	model "github.com/arne314/inbox-collab/internal/db/generated"
 )
 
-func (ic *InboxCollab) performMessageExtraction(ctx context.Context, mail *model.Mail) {
+func (ic *InboxCollab) performMessageExtraction(ctx context.Context, mail *model.Mail) bool {
 	history := ic.dbHandler.GetMailsByThread(ctx, mail.Thread.Int64)
 	history = slices.DeleteFunc(history, func(m *model.Mail) bool {
 		return m.ID == mail.ID || m.Timestamp.Time.After(mail.Timestamp.Time)
@@ -18,9 +19,11 @@ func (ic *InboxCollab) performMessageExtraction(ctx context.Context, mail *model
 	extracted := ic.messageExtractor.ExtractMessages(ctx, *mail, history)
 	if extracted == nil || extracted.Messages == nil {
 		log.Errorf("Error extracting messages for mail %v", mail.ID)
+		return false
 	} else {
 		mail.Messages = extracted
 		ic.dbHandler.UpdateExtractedMessages(ctx, mail)
+		return true
 	}
 }
 
@@ -38,9 +41,16 @@ func (ic *InboxCollab) setupMessageExtractionStage() {
 		wg.Add(len(mails))
 		// extract messages in batches per thread (mails are ordered by thread, timestamp)
 		extractBatch := func(b []*model.Mail) {
+			success := true
 			for _, m := range b {
 				defer wg.Done()
-				ic.performMessageExtraction(ctx, m)
+				if success { // cancel entire batch on error
+					success = success && ic.performMessageExtraction(ctx, m)
+				}
+			}
+			if !success {
+				time.Sleep(5 * time.Second)
+				MessageExtractionStage.QueueWork()
 			}
 		}
 		batch := make([]*model.Mail, 0, len(mails))
