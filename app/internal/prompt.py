@@ -86,6 +86,7 @@ class BaseParser(PydanticOutputParser):
 
 def generate_prompt_inputs(
     conversation: str,
+    author: str,
     subject: str,
     timestamp: datetime,
     reply_candidate: bool,
@@ -99,6 +100,7 @@ def generate_prompt_inputs(
     multiple = reply_candidate or forward_candidate
     inputs = {
         "conversation": conversation,
+        "author": author,
         "subject": subject,
         "timestamp": timestamp.strftime("%Y-%m-%dT%H:%M"),
         "task": template_task_multiple if multiple else template_task_single,

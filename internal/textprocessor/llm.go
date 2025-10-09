@@ -20,6 +20,7 @@ type LLM struct {
 }
 
 type ParseMessagesRequest struct {
+	Author           string `json:"author"`
 	Conversation     string `json:"conversation"`
 	Subject          string `json:"subject"`
 	Timestamp        string `json:"timestamp"`
@@ -55,11 +56,12 @@ func (llm *LLM) apiRequest(ctx context.Context, endpoint string, body []byte) ([
 
 func (llm *LLM) extractMessages(ctx context.Context, mail *model.Mail) *db.ExtractedMessages {
 	data := ParseMessagesRequest{
+		Author:           mail.NameFrom,
 		Conversation:     *mail.Body,
 		Subject:          mail.Subject,
 		Timestamp:        mail.Timestamp.Time.Format("2006-01-02T15:04"),
 		ReplyCandidate:   mail.HeaderInReplyTo != "",
-		ForwardCandidate: len(mail.HeaderReferences) != 0 && mail.HeaderInReplyTo == "",
+		ForwardCandidate: len(mail.HeaderReferences) != 0,
 	}
 	encoded, err := json.Marshal(data)
 	if err != nil {

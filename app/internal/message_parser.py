@@ -100,6 +100,7 @@ class MessageParser:
     async def parse_messages(
         self,
         conversation: str,
+        author: str,
         subject: str,
         timestamp: datetime,
         reply_candidate: bool,
@@ -108,6 +109,7 @@ class MessageParser:
         async with self.semaphore:
             inputs = generate_prompt_inputs(
                 conversation,
+                author,
                 subject,
                 timestamp,
                 reply_candidate,

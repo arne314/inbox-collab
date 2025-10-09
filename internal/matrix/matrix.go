@@ -96,8 +96,7 @@ func (mh *MatrixHandler) AddReply(
 	if conversation.Forwarded {
 		builder.WriteLine(formatAttribute("Forwarded", conversation.ForwardedBy))
 		hasHead = true
-	}
-	if time := formatTime(timestamp); time != "" {
+	} else if time := formatTime(timestamp); time != "" {
 		builder.WriteLine(time, wrapHtmlStrong(time))
 		hasHead = true
 	}
