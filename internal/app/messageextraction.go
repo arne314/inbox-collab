@@ -59,5 +59,5 @@ func (ic *InboxCollab) setupMessageExtractionStage() {
 		MatrixNotificationStage.QueueWork()
 		return true
 	}
-	MessageExtractionStage = NewStage("MessageExtraction", nil, work, true)
+	MessageExtractionStage = NewStage("MessageExtraction", nil, work, false) // initial extraction happens in sorting
 }
