@@ -96,7 +96,7 @@ func (mh *MatrixHandler) AddReply(
 	if conversation.Forwarded {
 		builder.WriteLine(formatAttribute("Forwarded", conversation.ForwardedBy))
 		hasHead = true
-	} else if time := formatTime(timestamp); time != "" {
+	} else if time := formatTime(timestamp, mh.Config.Timezone); time != "" {
 		builder.WriteLine(time, wrapHtmlStrong(time))
 		hasHead = true
 	}
@@ -110,7 +110,7 @@ func (mh *MatrixHandler) AddReply(
 
 	if conversation.Forwarded { // post entire history
 		for i, message := range conversation.Messages {
-			builder.WriteLine(formatBold(fmt.Sprintf("%s %s", message.Author, formatTime(*message.Timestamp))))
+			builder.WriteLine(formatBold(fmt.Sprintf("%s %s", message.Author, formatTime(*message.Timestamp, mh.Config.Timezone))))
 			content := *message.Content
 			txt, html := content, formatHtml(content)
 			if i < len(conversation.Messages)-1 {

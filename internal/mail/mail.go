@@ -60,7 +60,7 @@ func (mh *MailHandler) Setup(
 func (mh *MailHandler) MailboxUpdated() {
 	mailboxUpdateMutex.Lock()
 	defer mailboxUpdateMutex.Unlock()
-	mh.lastMailboxUpdate = time.Now()
+	mh.lastMailboxUpdate = time.Now().UTC()
 }
 
 func (mh *MailHandler) GetLastMailboxUpdate() time.Time {

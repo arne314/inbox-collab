@@ -7,6 +7,7 @@ import (
 	"regexp"
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/joho/godotenv"
 	"github.com/pelletier/go-toml/v2"
@@ -48,6 +49,7 @@ type MatrixConfig struct {
 	RoomsMailbox  map[string]string   `toml:"rooms_mailbox"`
 	RoomsOverview map[string][]string `toml:"overview"` // overview room -> targets
 	HeadBlacklist []string            `toml:"head_blacklist"`
+	Timezone      string              `toml:"timezone"`
 
 	RoomsAddrFromRegex map[*regexp.Regexp]string
 	RoomsAddrToRegex   map[*regexp.Regexp]string
@@ -205,6 +207,10 @@ func (c *Config) Load() {
 				allTargetRooms = append(allTargetRooms, room)
 			}
 		}
+	}
+	_, err = time.LoadLocation(c.Matrix.Timezone)
+	if err != nil {
+		log.Fatalf("Matrix format timezone is invalid: %v", err)
 	}
 	c.Matrix.DefaultRoom = resolveRoomValue(c.Matrix.DefaultRoom)
 	c.Matrix.RoomsAddrFromRegex = make(map[*regexp.Regexp]string)

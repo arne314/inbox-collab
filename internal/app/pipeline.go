@@ -56,7 +56,7 @@ func (s *PipelineStage) QueueWork() { // ensures that work is queued at most onc
 		log.Infof("Queued pipeline stage '%s'", s.name)
 		s.launch <- struct{}{}
 		s.queuedTimeMutex.Lock()
-		s.queuedTime = time.Now()
+		s.queuedTime = time.Now().UTC()
 		s.queuedTimeMutex.Unlock()
 	}
 }

@@ -101,7 +101,7 @@ func NewMailFetcher(
 
 func (mf *MailFetcher) fetchMessages() []*Mail {
 	searchCriteria := &imap.SearchCriteria{
-		SentSince: time.Now().AddDate(0, 0, -mf.globalConfig.MaxAge),
+		SentSince: time.Now().UTC().AddDate(0, 0, -mf.globalConfig.MaxAge),
 	}
 	if ok, _ := mf.uidsValid(); ok {
 		uid := imap.UIDSet{}

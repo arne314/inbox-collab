@@ -78,8 +78,10 @@ func formatHtml(text string) string {
 	return strings.ReplaceAll(text, "\n", "<br>")
 }
 
-func formatTime(timestamp time.Time) string {
+func formatTime(timestamp time.Time, timezone string) string {
 	var formatTime string
+	zone, _ := time.LoadLocation(timezone) // timezone has already been validated
+	timestamp = timestamp.In(zone)
 	age := time.Since(timestamp)
 	if age.Hours() > 24*30 {
 		formatTime = timestamp.Format("2 Jan 2006 15:04")
