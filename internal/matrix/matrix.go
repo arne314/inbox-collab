@@ -122,7 +122,11 @@ func (mh *MatrixHandler) AddReply(
 		}
 	} else {
 		content := *conversation.Messages[0].Content
-		builder.Write(content, formatHtml(content))
+		if content != "" {
+			builder.Write(content, formatHtml(content))
+		} else {
+			builder.Write(formatItalic("Empty message"))
+		}
 	}
 	return mh.client.SendThreadMessage(roomId, threadId, builder.Text(), builder.Html(), false)
 }

@@ -19,6 +19,22 @@ func NewMessageExtractor(llmConfig *cfg.LLMConfig) *MessageExtractor {
 }
 
 func (me *MessageExtractor) ExtractMessages(ctx context.Context, mail model.Mail, threadHistory []*model.Mail) *db.ExtractedMessages {
+	// handle empty messages
+	if NormalizeText(*mail.Body, true) == "" {
+		content := ""
+		return &db.ExtractedMessages{
+			Forwarded:   false,
+			ForwardedBy: "",
+			Messages: []*db.Message{
+				{
+					Author:    mail.NameFrom,
+					Content:   &content,
+					Timestamp: &mail.Timestamp.Time,
+				},
+			},
+		}
+	}
+
 	// find and remove old contained messages (check latest ones first)
 	baseChunks := computeMessageChunks(mail.Body)
 	messageRemoved := make(map[*model.Mail]bool)

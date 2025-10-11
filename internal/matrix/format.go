@@ -56,6 +56,10 @@ func wrapHtmlStrong(s string) string {
 	return fmt.Sprintf("<strong>%s</strong>", s)
 }
 
+func wrapHtmlItalic(s string) string {
+	return fmt.Sprintf("<i>%s</i>", s)
+}
+
 func formatAttribute(name string, value string) (string, string) {
 	textMessage := fmt.Sprintf("%s: %s", name, value)
 	htmlMessage := fmt.Sprintf("%s: %s", wrapHtmlStrong(name), value)
@@ -66,13 +70,17 @@ func formatBold(message string) (string, string) {
 	return message, wrapHtmlStrong(message)
 }
 
+func formatItalic(message string) (string, string) {
+	return message, wrapHtmlItalic(message)
+}
+
 func formatHtml(text string) string {
 	return strings.ReplaceAll(text, "\n", "<br>")
 }
 
 func formatTime(timestamp time.Time) string {
 	var formatTime string
-	age := time.Now().Sub(timestamp)
+	age := time.Since(timestamp)
 	if age.Hours() > 24*30 {
 		formatTime = timestamp.Format("2 Jan 2006 15:04")
 	} else if age.Hours() > 24*3 {

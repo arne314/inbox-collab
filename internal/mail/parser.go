@@ -95,8 +95,8 @@ func (mf *MailFetcher) parseMessage(msg *imapclient.FetchMessageData) *Mail {
 		Text:        envelope.Text,
 		Attachments: attachments,
 	}
-	if parsedMail.MessageId == "" || parsedMail.Text == "" {
-		log.Errorf("Skipping invalid mail for %v: %v", mf.name, parsedMail)
+	if parsedMail.MessageId == "" {
+		log.Errorf("Skipping invalid mail from fetcher %v: %v", mf.name, parsedMail)
 		return nil
 	}
 	return parsedMail

@@ -8,7 +8,6 @@ import (
 )
 
 func (ic *InboxCollab) setupThreadSortingStage() {
-	initial := true
 	work := func(ctx context.Context) bool {
 		timeSinceMailboxUpdate := time.Since(ic.mailHandler.GetLastMailboxUpdate()).Seconds()
 		timeSinceSortRequest := ThreadSortingStage.TimeSinceQueued().Seconds()
@@ -22,9 +21,8 @@ func (ic *InboxCollab) setupThreadSortingStage() {
 		ic.dbHandler.AutoUpdateMailSorting(ctx)
 		mails := ic.dbHandler.GetMailsRequiringSorting(ctx)
 		if len(mails) == 0 {
-			if initial {
-				initial = false
-				MessageExtractionStage.QueueWork()
+			if ThreadSortingStage.IsFirstWork {
+				MatrixNotificationStage.QueueWork()
 			}
 			return true
 		}
