@@ -69,11 +69,12 @@ func (mh *MailHandler) GetLastMailboxUpdate() time.Time {
 
 func (mh *MailHandler) Run(waitGroup *sync.WaitGroup) {
 	defer waitGroup.Done()
-	if mh.Config.ListMailboxes {
-		return
-	}
 	for _, fetcher := range mh.fetchers {
-		go fetcher.StartFetching()
+		if !mh.Config.ListMailboxes {
+			go fetcher.StartFetching()
+		} else {
+			fetcher.closed <- struct{}{}
+		}
 	}
 }
 

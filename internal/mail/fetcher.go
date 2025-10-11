@@ -313,7 +313,7 @@ func (mf *MailFetcher) login() bool {
 	mf.client = client
 	if mf.globalConfig.ListMailboxes {
 		mf.listMailboxes()
-		return false
+		return true
 	}
 	_, err = mf.uidsValid() // try to select inbox
 	if err != nil {
