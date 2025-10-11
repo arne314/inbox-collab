@@ -1,0 +1,65 @@
+[mail]
+max_age = 30
+
+[mail.sources.main]
+mailboxes = ["INBOX", "Sent Items"] # use --list-mailboxes flag to determine valid values
+hostname = "imapmain.example.com"
+port = 993
+
+[mail.sources.other]
+mailboxes = ["INBOX", "Sent Items", "Trash"]
+hostname = "imapother.example.com"
+port = 993
+
+[matrix]
+timezone = "Europe/Berlin"
+default_room = "default" # per default new threads will be created in this room; uses the alias defined below
+# mails from these addresses won't create a new thread
+head_blacklist = ["me@example.com", ".*@smtp.example.com"]
+
+[matrix.aliases]
+# aliases can be used in any following matrix configuration
+default = "!someid1:matrix.org"
+room2 = "!someid2:matrix.org"
+room3 = "!someid3:matrix.org"
+de = "!someid4:matrix.org"
+open_all = "!someid5:matrix.org"
+open_overview1 = "!someid6:matrix.org"
+open_overview2 = "!someid7:matrix.org"
+
+[matrix.rooms_addr_to]
+# sort into matrix thread based on To header
+"me@mail1.example.com" = "room2"
+".*@mail2.example.com" = "room3"
+
+[matrix.rooms_mailbox]
+# sort into matrix thread based on source mailbox
+"main:INBOX" = "room2"
+"main:Sent Items" = "room3"
+"other:.*" = "room3"
+
+[matrix.rooms_addr_from]
+# sort into matrix thread based on From header
+".*@mail.example.com" = "room2"
+"[specificperson1|specificperson2|otherperson]@example.com" = "room3"
+".*@.*.de" = "de"
+
+[matrix.overview]
+# create overview lists with links over all open threads in specified channels
+open_all = [] # an empty array results in an overview of open threads from all channels
+open_overview1 = ["room2", "room3"]
+open_overview2 = ["de"]
+
+[llm]
+rate_limit = 0.05 # this is a relatively strict limit
+rate_limit_max_bucket = 5
+python_api = "http://localhost:8000"
+max_concurrent_prompts = 2
+
+ollama_url = "http://localhost:11434"
+ollama_model = "llama3.1:8b"
+
+openai_model = "llama-whatever"
+openai_url = "https://llm.example.com/openai/v1"
+openai_max_retries = 12
+
