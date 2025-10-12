@@ -51,6 +51,9 @@ open_overview1 = ["room2", "room3"]
 open_overview2 = ["de"]
 
 [llm]
+# if you prefer to not use an llm, set
+# python_api = "passthrough"
+
 rate_limit = 0.05 # this is a relatively strict limit
 rate_limit_max_bucket = 5
 python_api = "http://localhost:8000"
