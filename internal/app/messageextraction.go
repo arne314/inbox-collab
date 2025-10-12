@@ -9,6 +9,7 @@ import (
 	log "github.com/sirupsen/logrus"
 
 	model "github.com/arne314/inbox-collab/internal/db/generated"
+	textprocessor "github.com/arne314/inbox-collab/internal/textprocessor"
 )
 
 func (ic *InboxCollab) performMessageExtraction(ctx context.Context, mail *model.Mail) bool {
@@ -16,7 +17,8 @@ func (ic *InboxCollab) performMessageExtraction(ctx context.Context, mail *model
 	history = slices.DeleteFunc(history, func(m *model.Mail) bool {
 		return m.ID == mail.ID || m.Timestamp.Time.After(mail.Timestamp.Time)
 	})
-	extracted := ic.messageExtractor.ExtractMessages(ctx, *mail, history)
+	extractor := textprocessor.NewMessageExtractor(ic.Config.LLM.ApiUrl, *mail, history)
+	extracted := extractor.ExtractMessages(ctx)
 	if extracted == nil || extracted.Messages == nil {
 		log.Errorf("Error extracting messages for mail %v", mail.ID)
 		return false

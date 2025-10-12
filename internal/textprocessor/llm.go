@@ -10,13 +10,41 @@ import (
 
 	log "github.com/sirupsen/logrus"
 
-	cfg "github.com/arne314/inbox-collab/internal/config"
 	model "github.com/arne314/inbox-collab/internal/db/generated"
 	"github.com/arne314/inbox-collab/internal/db/sqlc"
 )
 
-type LLM struct {
-	Config *cfg.LLMConfig
+type LLM interface {
+	GetPlaceholder() string
+	ExtractMessages(ctx context.Context, mail *model.Mail) *db.ExtractedMessages
+}
+
+type LLMPassthrough struct{}
+
+func (llm *LLMPassthrough) GetPlaceholder() string {
+	return "\n"
+}
+
+func (llm *LLMPassthrough) ExtractMessages(ctx context.Context, mail *model.Mail) *db.ExtractedMessages {
+	return PassthroughExtraction(mail)
+}
+
+func PassthroughExtraction(mail *model.Mail) *db.ExtractedMessages {
+	return &db.ExtractedMessages{
+		Forwarded:   false,
+		ForwardedBy: "",
+		Messages: []*db.Message{
+			{
+				Author:    mail.NameFrom,
+				Content:   mail.Body,
+				Timestamp: &mail.Timestamp.Time,
+			},
+		},
+	}
+}
+
+type LLMPython struct {
+	apiUrl string
 }
 
 type ParseMessagesRequest struct {
@@ -28,11 +56,15 @@ type ParseMessagesRequest struct {
 	ForwardCandidate bool   `json:"forward_candidate"`
 }
 
-func (llm *LLM) apiRequest(ctx context.Context, endpoint string, body []byte) ([]byte, error) {
+func (llm *LLMPython) GetPlaceholder() string {
+	return "\n\n=== PLACEHOLDER ===\n\n"
+}
+
+func (llm *LLMPython) apiRequest(ctx context.Context, endpoint string, body []byte) ([]byte, error) {
 	req, err := http.NewRequestWithContext(
 		ctx,
 		http.MethodPost,
-		llm.Config.ApiUrl+"/"+endpoint,
+		llm.apiUrl+"/"+endpoint,
 		bytes.NewBuffer(body),
 	)
 	if err != nil {
@@ -54,7 +86,7 @@ func (llm *LLM) apiRequest(ctx context.Context, endpoint string, body []byte) ([
 	return data, nil
 }
 
-func (llm *LLM) extractMessages(ctx context.Context, mail *model.Mail) *db.ExtractedMessages {
+func (llm *LLMPython) ExtractMessages(ctx context.Context, mail *model.Mail) *db.ExtractedMessages {
 	data := ParseMessagesRequest{
 		Author:           mail.NameFrom,
 		Conversation:     *mail.Body,
