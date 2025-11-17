@@ -33,7 +33,9 @@ const (
 
 var (
 	commands []string = []string{
+		"o",
 		"open",
+		"c",
 		"close",
 		"forceclose",
 		"move",
@@ -86,13 +88,13 @@ func (c *Command) Run(ctx context.Context) {
 	}
 
 	switch c.Name {
-	case "open":
+	case "open", "o":
 		if threadId == "" {
 			ok = false
 		} else {
 			ok = c.actions.OpenThread(ctx, c.roomId, threadId)
 		}
-	case "close":
+	case "close", "c":
 		if threadId == "" {
 			ok = false
 		} else {
