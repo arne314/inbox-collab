@@ -80,7 +80,7 @@ func (mc *MatrixClient) VerificationCancelled(
 }
 
 func (mc *MatrixClient) VerificationDone(
-	ctx context.Context, txnID id.VerificationTransactionID,
+	ctx context.Context, txnID id.VerificationTransactionID, method event.VerificationMethod,
 ) {
 	log.Infof("Verification done with transaction id %v", txnID)
 }
