@@ -1,10 +1,10 @@
 import re
 from datetime import datetime
-from typing import List
+from typing import List, Optional
 
-from langchain.output_parsers import PydanticOutputParser
-from langchain_core.exceptions import OutputParserException
-from pydantic import BaseModel, Field, field_serializer
+from dateutil import parser as dateutil_parser
+from pydantic import BaseModel, Field, field_validator, model_validator
+from typing_extensions import Self
 
 from .strings import (
     template_forward,
@@ -21,11 +21,13 @@ placeholder_regex = re.compile(r"==\s*PLACEHOLDER\s*==")
 class MessageSchema(BaseModel):
     author: str = Field(..., description="Message author")
     content: str = Field(default="", description="Message content")
-    timestamp: datetime | None = Field(default=None, description="Message timestamp")
+    timestamp: Optional[str] = Field(default=None, description="Message timestamp")
 
-    @field_serializer("timestamp")
-    def serialize_timestamp(self, value: datetime) -> str:
-        return value.astimezone().isoformat()
+    @field_validator("timestamp", mode="before")
+    @classmethod
+    def parse_timestamp(cls, value) -> str | None:
+        if isinstance(value, str):
+            return dateutil_parser.parse(value, fuzzy=True).isoformat()
 
     def is_placeholder(self) -> bool:
         if placeholder_regex.search(self.content):
@@ -41,47 +43,47 @@ class ResponseSchema(BaseModel):
     forwarded: bool = Field(default=False, description="Whether the conversation was forwarded")
     forwarded_by: str | None = Field(default=None, description="Person who forwarded the mail")
 
+    @field_validator("messages")
+    @classmethod
+    def validate_messages(cls, messages):
+        if not messages:
+            raise ValueError("Extract at least one message")
 
-class BaseParser(PydanticOutputParser):
-    def __init__(self):
-        super().__init__(pydantic_object=ResponseSchema)
+        if all(msg.timestamp is None for msg in messages):
+            raise ValueError(
+                "Set the `timestamp` of the most recent message to the one given in the prompt"
+            )
 
-    def parse(self, text):  # additional data validation and processing
-        parsed: ResponseSchema = super().parse(text)
-        if not parsed.messages:
-            raise OutputParserException("Please extract at least one message")
-        if all(msg.timestamp is None for msg in parsed.messages):
-            raise OutputParserException(
-                "Please set the `timestamp` of the most recent message to the one given in the prompt"
-            )
-        if (
-            parsed.forwarded and (parsed.forwarded_by is None or parsed.forwarded_by.isspace())
-        ) or (
-            not parsed.forwarded
-            and parsed.forwarded_by is not None
-            and not parsed.forwarded_by.isspace()
-        ):
-            raise OutputParserException(
-                "Please set the `forwarded` boolean and `forwarded_by` string according to the given conversation"
-            )
-        if not parsed.forwarded:
-            parsed.forwarded_by = None
         # put most recent message first
-        parsed.messages.sort(
-            key=lambda m: m.timestamp if m.timestamp is not None else datetime.fromtimestamp(0),
+        messages.sort(
+            key=lambda m: datetime.fromisoformat(m.timestamp)
+            if m.timestamp is not None
+            else datetime.fromtimestamp(0),
             reverse=True,
         )
         # make sure the first message is not a placeholder
-        if parsed.messages[0].is_placeholder():
-            for i, message in enumerate(parsed.messages):
+        if messages[0].is_placeholder():
+            for i, message in enumerate(messages):
                 if not message.is_placeholder():
-                    parsed.messages[0], parsed.messages[i] = parsed.messages[i], parsed.messages[0]
+                    messages[0], messages[i] = messages[i], messages[0]
                     break
             else:
-                raise OutputParserException(
-                    "You missed the message without a placeholder. Please include it."
+                raise ValueError(
+                    "There is at least one message without a placeholder. Please include it properly."
                 )
-        return parsed
+        return messages
+
+    @model_validator(mode="after")
+    def validate_forwarded(self) -> Self:
+        if (self.forwarded and (self.forwarded_by is None or self.forwarded_by.isspace())) or (
+            not self.forwarded and self.forwarded_by is not None and not self.forwarded_by.isspace()
+        ):
+            raise ValueError(
+                "Set the `forwarded` boolean and `forwarded_by` string according to the given conversation"
+            )
+        if not self.forwarded:
+            self.forwarded_by = None
+        return self
 
 
 def generate_prompt_inputs(

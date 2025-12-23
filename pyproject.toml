@@ -13,6 +13,7 @@ dependencies = [
     "langchain-ollama>=1.0.1",
     "langchain-openai>=1.1.6",
     "pydantic>=2.12.5",
+    "python-dateutil>=2.9.0.post0",
     "python-dotenv>=1.2.1",
 ]
 

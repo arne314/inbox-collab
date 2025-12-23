@@ -2,22 +2,20 @@ from asyncio import Semaphore
 from datetime import datetime
 
 import langchain
-from langchain.output_parsers import OutputFixingParser
-from langchain_core.exceptions import OutputParserException
-from langchain_core.prompts import PromptTemplate
+from langchain.agents import create_agent
+from langchain.agents.middleware import ModelCallLimitMiddleware
+from langchain.agents.structured_output import ToolStrategy
+from langchain_core.prompts import ChatPromptTemplate, PromptTemplate
 from langchain_core.rate_limiters import InMemoryRateLimiter
-from langchain_core.runnables import Runnable
-from langchain_ollama import OllamaLLM
+from langchain_ollama import ChatOllama
 from langchain_openai import ChatOpenAI
 
-from .prompt import BaseParser, MessageSchema, ResponseSchema, generate_prompt_inputs
-from .strings import template
+from .prompt import MessageSchema, ResponseSchema, generate_prompt_inputs
+from .strings import template_format_instructions, template_post, template_pre
 
 
 class MessageParser:
-    chain: Runnable
-    base_parser: BaseParser
-    fixing_parser: OutputFixingParser
+    prompt: PromptTemplate
     debug: bool
     semaphore: Semaphore
     max_concurrent_prompts: int
@@ -28,8 +26,7 @@ class MessageParser:
         self.semaphore = Semaphore(self.max_concurrent_prompts)
         langchain.debug = self.debug  # pyright: ignore
 
-        self.base_parser = BaseParser()
-        llm = OllamaLLM(
+        llm = ChatOllama(
             model="llama3.1:8b",
             base_url="http://localhost:11434",
             temperature=0.1,
@@ -59,8 +56,8 @@ class MessageParser:
             if (llm_config_url := config.get("ollama_url")) is not None:
                 llm.base_url = llm_config_url
 
-        if isinstance(llm, OllamaLLM):
-            llm_retry = OllamaLLM(
+        if isinstance(llm, ChatOllama):
+            llm_retry = ChatOllama(
                 model=llm.model, base_url=llm.base_url, temperature=0.5, top_p=0.5, top_k=25
             )
         elif isinstance(llm, ChatOpenAI):
@@ -75,24 +72,22 @@ class MessageParser:
         assert llm_retry is not None, "Retry llm could not be set, check you config"
         print(f"Setup llm provider: {llm}")
 
-        prompt = PromptTemplate(
-            template=template,
-            input_variables=[
-                "conversation",
-                "subject",
-                "timestamp",
-                "task",
-                "template_multiple",
-                "template_forward",
-                "format_instructions",
-                "forward_format1",
-                "forward_format2",
-            ],
+        def setup_agent(model):
+            return create_agent(
+                model=model,
+                tools=[],
+                response_format=ToolStrategy(ResponseSchema),
+                middleware=[ModelCallLimitMiddleware(run_limit=2, exit_behavior="error")],
+            )
+
+        prompt = ChatPromptTemplate.from_messages(
+            [
+                ("system", template_pre + template_format_instructions),
+                ("human", template_post),
+            ]
         )
-        self.chain = prompt | llm
-        self.fixing_parser = OutputFixingParser.from_llm(
-            parser=self.base_parser, llm=llm_retry, max_retries=2
-        )
+        self.chain = prompt | setup_agent(llm)
+        self.chain_retry = prompt | setup_agent(llm_retry)
 
     def get_concurrent_prompts(self) -> int:
         return self.max_concurrent_prompts - self.semaphore._value
@@ -115,26 +110,31 @@ class MessageParser:
                 reply_candidate,
                 forward_candidate,
             )
-            output = await self.chain.ainvoke(inputs)
 
-            try:
-                parsed: ResponseSchema = await self.fixing_parser.ainvoke(output)
-                parsed.messages[0].timestamp = timestamp
-                print("Message extraction successful")
-                if self.debug:
-                    for i, msg in enumerate(parsed.messages):
-                        print(
-                            f"Message {'(forwarded) ' if parsed.forwarded else ''}{i + 1} from {msg.author} at {msg.timestamp}:\n{msg.content}\n"
-                        )
-                return parsed
-            except OutputParserException:
-                print("Failed to extract messages")
-                return ResponseSchema(
-                    messages=[
-                        MessageSchema(
-                            author="Error extracting messages",
-                            content=conversation,
-                            timestamp=timestamp,
-                        ),
-                    ],
-                )
+            for chain in [self.chain, self.chain_retry]:
+                try:
+                    result = await chain.ainvoke(inputs)
+                    parsed: ResponseSchema = result["structured_response"]
+                    parsed.messages[0].timestamp = timestamp.isoformat()
+                    print("Message extraction successful")
+                    if self.debug:
+                        for i, msg in enumerate(parsed.messages):
+                            print(
+                                f"Message {'(forwarded) ' if parsed.forwarded else ''}{i + 1} from {msg.author} at {msg.timestamp}:\n{msg.content}\n"
+                            )
+                    return parsed
+                except Exception:
+                    print("Failed to extract messages, retrying with different model...")
+                    continue
+
+            print("Failed to extract messages, returning unmodified input")
+            # validation must be skipped as there might be placeholder block
+            return ResponseSchema.model_construct(
+                messages=[
+                    MessageSchema(
+                        author="Error extracting messages",
+                        content=conversation,
+                        timestamp=timestamp.isoformat(),
+                    ),
+                ],
+            )
