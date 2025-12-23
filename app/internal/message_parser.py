@@ -25,6 +25,15 @@ class MessageParser:
         self.max_concurrent_prompts = config.get("max_concurrent_prompts", 5)
         self.semaphore = Semaphore(self.max_concurrent_prompts)
         langchain.debug = self.debug  # pyright: ignore
+        if debug:
+            from openinference.instrumentation.langchain import LangChainInstrumentor
+            from phoenix.otel import register as register_tracer
+
+            tracer_provider = register_tracer(
+                project_name="inbox-collab-dev",
+                endpoint="http://localhost:6006/v1/traces",
+            )
+            LangChainInstrumentor().instrument(tracer_provider=tracer_provider)
 
         llm = ChatOllama(
             model="llama3.1:8b",

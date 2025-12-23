@@ -32,7 +32,7 @@ is optionally stripped using a large language model.
 ## Development
 1. Enter nix shell with `nix-shell`
 2. Run main go app with `go run ./cmd/main.go`
-3. Run llm python app with `uv run fastapi dev`
+3. Run llm python app with `uv run fastapi dev` and setup tracing backend with `uv run arize-phoenix serve`
 4. Run database with `docker compose run -p 5432:5432 db`
 5. Test go with `go test ./...`
 6. Generate sqlc files with `sqlc generate`

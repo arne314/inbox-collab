@@ -23,6 +23,8 @@ line-length = 100
 
 [dependency-groups]
 dev = [
+    "arize-phoenix>=12.26.0",
+    "openinference-instrumentation-langchain>=0.1.57",
     "ruff>=0.14.10",
 ]
 
