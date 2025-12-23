@@ -1,6 +1,6 @@
 module github.com/arne314/inbox-collab
 
-go 1.23.4
+go 1.24.0
 
 require (
 	github.com/emersion/go-imap/v2 v2.0.0-beta.5
@@ -11,6 +11,7 @@ require (
 	github.com/pelletier/go-toml/v2 v2.2.3
 	github.com/sirupsen/logrus v1.9.3
 	go.mau.fi/util v0.8.6
+	golang.org/x/text v0.31.0
 	maunium.net/go/mautrix v0.23.2
 )
 
@@ -37,10 +38,9 @@ require (
 	github.com/tidwall/match v1.1.1 // indirect
 	github.com/tidwall/pretty v1.2.1 // indirect
 	github.com/tidwall/sjson v1.2.5 // indirect
-	golang.org/x/crypto v0.36.0 // indirect
+	golang.org/x/crypto v0.45.0 // indirect
 	golang.org/x/exp v0.0.0-20250305212735-054e65f0b394 // indirect
-	golang.org/x/net v0.38.0 // indirect
-	golang.org/x/sync v0.12.0 // indirect
-	golang.org/x/sys v0.31.0 // indirect
-	golang.org/x/text v0.23.0 // indirect
+	golang.org/x/net v0.47.0 // indirect
+	golang.org/x/sync v0.18.0 // indirect
+	golang.org/x/sys v0.38.0 // indirect
 )
