@@ -35,7 +35,7 @@ func (ic *InboxCollab) setupMessageExtractionStage() {
 		mails := ic.dbHandler.GetMailsRequiringMessageExtraction(ctx)
 		if len(mails) == 0 {
 			if MessageExtractionStage.IsFirstWork {
-				ThreadSortingStage.QueueWork()
+				MatrixNotificationStage.QueueWork()
 			}
 			return true
 		}

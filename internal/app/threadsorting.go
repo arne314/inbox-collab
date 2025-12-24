@@ -11,7 +11,7 @@ func (ic *InboxCollab) setupThreadSortingStage() {
 	work := func(ctx context.Context) bool {
 		timeSinceMailboxUpdate := time.Since(ic.mailHandler.GetLastMailboxUpdate()).Seconds()
 		timeSinceSortRequest := ThreadSortingStage.TimeSinceQueued().Seconds()
-		waitForCompleteData := timeSinceMailboxUpdate < 10 && timeSinceSortRequest < 120 // timeout
+		waitForCompleteData := timeSinceMailboxUpdate < 5 && timeSinceSortRequest < 120 // timeout
 		if waitForCompleteData {
 			log.Infof("Waiting for complete data to sort threads...")
 			time.Sleep(2 * time.Second)
@@ -22,7 +22,7 @@ func (ic *InboxCollab) setupThreadSortingStage() {
 		mails := ic.dbHandler.GetMailsRequiringSorting(ctx)
 		if len(mails) == 0 {
 			if ThreadSortingStage.IsFirstWork {
-				MatrixNotificationStage.QueueWork()
+				MessageExtractionStage.QueueWork()
 			}
 			return true
 		}

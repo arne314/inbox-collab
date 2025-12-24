@@ -27,7 +27,7 @@ class MessageSchema(BaseModel):
     @classmethod
     def parse_timestamp(cls, value) -> str | None:
         if isinstance(value, str):
-            return dateutil_parser.parse(value, fuzzy=True).isoformat()
+            return dateutil_parser.parse(value, fuzzy=True).astimezone().isoformat()
 
     def is_placeholder(self) -> bool:
         if placeholder_regex.search(self.content):

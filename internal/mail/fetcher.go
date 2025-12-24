@@ -151,6 +151,7 @@ func (mf *MailFetcher) fetchMessages() []*Mail {
 			mails = append(mails, mail)
 			mf.uidLast = max(mf.uidLast, uint32(uids[i]))
 		}
+		mf.mailHandler.MailboxUpdated()
 	}
 	mf.saveState()
 	log.Infof("Done fetching %v messages from %v", len(mails), mf.name)

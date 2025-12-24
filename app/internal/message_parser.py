@@ -86,7 +86,7 @@ class MessageParser:
                 model=model,
                 tools=[],
                 response_format=ToolStrategy(ResponseSchema),
-                middleware=[ModelCallLimitMiddleware(run_limit=2, exit_behavior="error")],
+                middleware=[ModelCallLimitMiddleware(run_limit=4, exit_behavior="error")],
             )
 
         prompt = ChatPromptTemplate.from_messages(
@@ -124,7 +124,7 @@ class MessageParser:
                 try:
                     result = await chain.ainvoke(inputs)
                     parsed: ResponseSchema = result["structured_response"]
-                    parsed.messages[0].timestamp = timestamp.isoformat()
+                    parsed.messages[0].timestamp = timestamp.astimezone().isoformat()
                     print("Message extraction successful")
                     if self.debug:
                         for i, msg in enumerate(parsed.messages):
@@ -143,7 +143,7 @@ class MessageParser:
                     MessageSchema(
                         author="Error extracting messages",
                         content=conversation,
-                        timestamp=timestamp.isoformat(),
+                        timestamp=timestamp.astimezone().isoformat(),
                     ),
                 ],
             )
