@@ -54,9 +54,6 @@ func (me *MessageExtractor) ExtractMessages(ctx context.Context) *db.ExtractedMe
 
 	// send through llm
 	me.extractLLM(ctx)
-	if me.result == nil {
-		return nil
-	}
 
 	// fixup
 	me.postExtraction()
@@ -97,6 +94,10 @@ func (me *MessageExtractor) extractLLM(ctx context.Context) {
 
 // fix potential llm extraction issues and process placeholders
 func (me *MessageExtractor) postExtraction() {
+	if me.result == nil {
+		return
+	}
+
 	// we might need to restore a message (though restoring more than one is not implemented)
 	if me.result.Forwarded {
 	iterresult:
