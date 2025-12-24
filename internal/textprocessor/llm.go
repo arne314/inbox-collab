@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"regexp"
 
 	log "github.com/sirupsen/logrus"
 
@@ -14,8 +15,11 @@ import (
 	"github.com/arne314/inbox-collab/internal/db/sqlc"
 )
 
+var placeholderRegex *regexp.Regexp = regexp.MustCompile(`==\s*PLACEHOLDER\s*==`)
+
 type LLM interface {
 	GetPlaceholder() string
+	IsPlaceholder(msg string) bool
 	ExtractMessages(ctx context.Context, mail *model.Mail) *db.ExtractedMessages
 }
 
@@ -23,6 +27,10 @@ type LLMPassthrough struct{}
 
 func (llm *LLMPassthrough) GetPlaceholder() string {
 	return "\n"
+}
+
+func (llm *LLMPassthrough) IsPlaceholder(msg string) bool {
+	return false
 }
 
 func (llm *LLMPassthrough) ExtractMessages(ctx context.Context, mail *model.Mail) *db.ExtractedMessages {
@@ -58,6 +66,10 @@ type ParseMessagesRequest struct {
 
 func (llm *LLMPython) GetPlaceholder() string {
 	return "\n\n=== PLACEHOLDER ===\n\n"
+}
+
+func (llm *LLMPython) IsPlaceholder(msg string) bool {
+	return placeholderRegex.FindStringIndex(msg) != nil
 }
 
 func (llm *LLMPython) apiRequest(ctx context.Context, endpoint string, body []byte) ([]byte, error) {

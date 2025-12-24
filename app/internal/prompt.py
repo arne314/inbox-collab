@@ -30,7 +30,9 @@ class MessageSchema(BaseModel):
             return dateutil_parser.parse(value, fuzzy=True).astimezone().isoformat()
 
     def is_placeholder(self) -> bool:
-        if placeholder_regex.search(self.content):
+        if placeholder_regex.search(self.content) or (
+            not self.content.strip() and not self.timestamp
+        ):
             return True
         return False
 

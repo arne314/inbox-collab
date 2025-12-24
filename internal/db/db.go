@@ -110,6 +110,16 @@ func (dh *DbHandler) GetMailsByThread(ctx context.Context, threadId int64) []*db
 	return getMails(ctx, get, fmt.Sprintf("in thread %v", threadId))
 }
 
+func (dh *DbHandler) GetMailsByMessageIds(ctx context.Context, messageIds []string) []*db.Mail {
+	if len(messageIds) == 0 {
+		return []*db.Mail{}
+	}
+	get := func(ctx context.Context) ([]*db.Mail, error) {
+		return dh.queries.GetMailsByMessageIds(ctx, messageIds)
+	}
+	return getMails(ctx, get, fmt.Sprintf("with message ids %v", messageIds))
+}
+
 func (dh *DbHandler) GetMailsRequiringMessageExtraction(ctx context.Context) []*db.Mail {
 	return getMails(ctx, dh.queries.GetMailsRequiringMessageExtraction, "requiring message extraction")
 }

@@ -2,6 +2,7 @@ package textprocessor
 
 import (
 	"context"
+	"slices"
 	"strings"
 
 	model "github.com/arne314/inbox-collab/internal/db/generated"
@@ -94,8 +95,27 @@ func (me *MessageExtractor) extractLLM(ctx context.Context) {
 	me.result = me.llm.ExtractMessages(ctx, me.mail)
 }
 
-// fix potential llm extraction issues
+// fix potential llm extraction issues and process placeholders
 func (me *MessageExtractor) postExtraction() {
+	// we might need to restore a message (though restoring more than one is not implemented)
+	if me.result.Forwarded {
+	iterresult:
+		for _, ext := range me.result.Messages {
+			if me.llm.IsPlaceholder(*ext.Content) {
+				for mail, removed := range me.messageRemoved {
+					if removed && mail.Messages != nil {
+						ext.Content = mail.Messages.Messages[0].Content
+						break iterresult
+					}
+				}
+			}
+		}
+	}
+	// placeholders can be ignored from now on
+	me.result.Messages = slices.DeleteFunc(me.result.Messages, func(m *db.Message) bool {
+		return me.llm.IsPlaceholder(*m.Content)
+	})
+
 	// detect new and known messsages
 	messageKnown := make(map[*db.Message]bool)
 	oldMessageKnown := make(map[*model.Mail]bool)

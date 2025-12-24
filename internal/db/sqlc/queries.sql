@@ -17,9 +17,14 @@ SELECT * FROM mail
 WHERE thread = $1
 ORDER BY timestamp;
 
+-- name: GetMailsByMessageIds :many
+SELECT * FROM mail
+WHERE header_id = ANY($1::text[])
+ORDER BY timestamp;
+
 -- name: GetMailsRequiringMessageExtraction :many
 SELECT * FROM mail
-WHERE sorted AND thread IS NOT NULL AND messages ->> 'messages' IS NULL
+WHERE sorted AND messages ->> 'messages' IS NULL
 ORDER BY thread, timestamp;
 
 -- name: GetMailsRequiringSorting :many

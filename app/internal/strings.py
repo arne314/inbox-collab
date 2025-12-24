@@ -33,12 +33,12 @@ A valid output (this is just an example conversation) would look like this:
         }},
         {{
             "author": "Sarah Thompson",
-            "content": "", # originally was === PLACEHOLDER ===
+            "content": "=== PLACEHOLDER ===",
             "timestamp": "2020-03-14T10:25"
         }},
         {{
             "author": "John Miller",
-            "content": "", # originally was === PLACEHOLDER ===
+            "content": "=== PLACEHOLDER ===",
             "timestamp": "2020-03-14T10:10"
         }} # depending on the input this might go on
     ],
@@ -78,6 +78,7 @@ template_forward = """
   which will be stated at the start of the subject (e.g. `^Fw: .*` or `^Fwd: .*`, not: `Re: Fwd: .*`)
   or at the beginning of the conversation itself;
   in this case, return all messages, set the `forwarded_by` to the person who forwarded the message, and set the boolean `"forwarded" = true`
+- Also turn a comment left by the forwarding person into a message; include an empty message (`""`) if there is no comment
 - If only parts of the conversation have been forwarded, don't set the `forwarded_by` and `forwarded` values
 """
 
@@ -87,8 +88,7 @@ For the target format, please note:
 - There might not be a single message (just a signature); in this case, set `content` to an empty string
 {template_multiple}
 {template_forward}
-- Fully discard messages consisting of just `=== PLACEHOLDER ===`
-  and ignore any data (such as timestamps) given in their header
+- Also include messages consisting of just `=== PLACEHOLDER ===`
 - Exclude all kinds of metadata such as email headers, symbols indicating the start/end of a new message,
   sender and receiver email addresses, imprints/signatures/footers and information about the mail client
 - Exclude all kinds of email-specific formatting such as `>` at the start of replies
