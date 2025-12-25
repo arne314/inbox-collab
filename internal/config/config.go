@@ -27,6 +27,16 @@ type LLMConfig struct {
 	ApiUrl string `toml:"python_api"`
 }
 
+type MailSenderConfig struct {
+	Hostname string `toml:"hostname"`
+	Port     int    `toml:"port"`
+	AddrFrom string `toml:"addr_from"`
+	AddrCC   string `toml:"addr_cc"`
+	AddrBCC  string `toml:"addr_bcc"`
+	Username string
+	Password string
+}
+
 type MailSourceConfig struct {
 	Hostname  string   `toml:"hostname"`
 	Port      int      `toml:"port"`
@@ -37,6 +47,7 @@ type MailSourceConfig struct {
 
 type MailConfig struct {
 	MaxAge        int                          `toml:"max_age"`
+	Senders       map[string]*MailSenderConfig `toml:"senders"`
 	Sources       map[string]*MailSourceConfig `toml:"sources"`
 	ListMailboxes bool
 }
@@ -183,6 +194,16 @@ func (c *Config) Load() {
 		}
 		if len(source.Mailboxes) == 0 {
 			source.Mailboxes = []string{"INBOX"}
+		}
+	}
+	for name, sender := range c.Mail.Senders {
+		sender.Username = c.getenv(fmt.Sprintf("MAIL_SENDER_%s_USERNAME", strings.ToUpper(name)))
+		sender.Password = c.getenv(fmt.Sprintf("MAIL_SENDER_%s_PASSWORD", strings.ToUpper(name)))
+		if sender.Username == "" || sender.Password == "" {
+			log.Fatalf("Incomplete mail sender credentials provided for %v", name)
+		}
+		if sender.AddrFrom == "" {
+			log.Fatalf("Please set 'addr_from' for %v like 'Author name <mail@example.com>'", name)
 		}
 	}
 
