@@ -57,6 +57,14 @@ func parseNameFrom(header string) string {
 	return ""
 }
 
+func parseDomain(header string) string {
+	matches := addressRegex.FindStringSubmatch(header)
+	if matches != nil {
+		return matches[3]
+	}
+	return ""
+}
+
 func (mf *MailFetcher) parseMessage(msg *imapclient.FetchMessageData) *Mail {
 	var bodySection imapclient.FetchItemDataBodySection
 	ok := false

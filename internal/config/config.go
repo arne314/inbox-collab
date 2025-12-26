@@ -28,11 +28,11 @@ type LLMConfig struct {
 }
 
 type MailSenderConfig struct {
-	Hostname string `toml:"hostname"`
-	Port     int    `toml:"port"`
-	AddrFrom string `toml:"addr_from"`
-	AddrCC   string `toml:"addr_cc"`
-	AddrBCC  string `toml:"addr_bcc"`
+	Hostname string   `toml:"hostname"`
+	Port     int      `toml:"port"`
+	AddrFrom string   `toml:"addr_from"`
+	AddrCC   []string `toml:"addr_cc"`
+	AddrBCC  []string `toml:"addr_bcc"`
 	Username string
 	Password string
 }
@@ -49,6 +49,7 @@ type MailConfig struct {
 	MaxAge        int                          `toml:"max_age"`
 	Senders       map[string]*MailSenderConfig `toml:"senders"`
 	Sources       map[string]*MailSourceConfig `toml:"sources"`
+	Timezone      string                       `toml:"timezone"`
 	ListMailboxes bool
 }
 
@@ -232,6 +233,10 @@ func (c *Config) Load() {
 	_, err = time.LoadLocation(c.Matrix.Timezone)
 	if err != nil {
 		log.Fatalf("Matrix format timezone is invalid: %v", err)
+	}
+	_, err = time.LoadLocation(c.Mail.Timezone)
+	if err != nil {
+		log.Fatalf("Mail send format timezone is invalid: %v", err)
 	}
 	c.Matrix.DefaultRoom = resolveRoomValue(c.Matrix.DefaultRoom)
 	c.Matrix.RoomsAddrFromRegex = make(map[*regexp.Regexp]string)
