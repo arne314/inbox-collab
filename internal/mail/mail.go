@@ -11,6 +11,27 @@ import (
 
 var mailboxUpdateMutex sync.RWMutex
 
+type Mail struct {
+	Fetcher     string
+	NameFrom    string
+	AddrFrom    string
+	Subject     string
+	Date        time.Time
+	Text        string
+	MessageId   string
+	InReplyTo   string
+	References  []string
+	AddrTo      []string
+	Attachments []string
+}
+
+func (m *Mail) String() string {
+	return fmt.Sprintf(
+		"Mail %v on %v from %v to %v with subject %v and attachments %v",
+		m.MessageId, m.Date, m.AddrFrom, m.AddrTo, m.Subject, m.Attachments,
+	)
+}
+
 type MailHandler struct {
 	fetchers          []*MailFetcher
 	senders           map[string]*MailSender
