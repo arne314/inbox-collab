@@ -66,7 +66,7 @@ func (mh *MailHandler) Setup(
 			waitGroup.Add(1)
 			go func(f *MailFetcher) {
 				if !f.Setup() {
-					log.Panicf("Unable to connect MailFetcher %v", f.name)
+					log.Fatalf("Unable to connect MailFetcher %v", f.name)
 				}
 				waitGroup.Done()
 			}(fetcher)
@@ -78,11 +78,11 @@ func (mh *MailHandler) Setup(
 	}
 
 	for name, cfg := range mh.Config.Senders {
-		sender := NewMailSender(name, cfg)
+		sender := NewMailSender(name, cfg, mh.Config)
 		waitGroup.Add(1)
 		go func(s *MailSender) {
 			if !s.TestConnection() {
-				log.Panicf("Unable to use MailSender %v", s.name)
+				log.Fatalf("Unable to use MailSender %v", s.name)
 			}
 			waitGroup.Done()
 		}(sender)

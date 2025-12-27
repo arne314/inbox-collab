@@ -12,6 +12,10 @@ VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
 ON CONFLICT (header_id) DO NOTHING
 RETURNING *;
 
+-- name: GetMailByMatrixId :one
+SELECT * FROM mail
+WHERE matrix_id = $1 LIMIT 1;
+
 -- name: GetMailsByThread :many
 SELECT * FROM mail
 WHERE thread = $1
@@ -24,7 +28,7 @@ ORDER BY timestamp;
 
 -- name: GetMailsRequiringMessageExtraction :many
 SELECT * FROM mail
-WHERE sorted AND messages ->> 'messages' IS NULL
+WHERE sorted AND fetcher IS NOT NULL AND messages ->> 'messages' IS NULL
 ORDER BY thread, timestamp;
 
 -- name: GetMailsRequiringSorting :many

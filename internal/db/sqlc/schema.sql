@@ -23,7 +23,7 @@ CREATE TABLE thread (
 
 CREATE TABLE mail (
     id BIGSERIAL PRIMARY KEY,
-    fetcher TEXT REFERENCES fetcher(id) ON DELETE SET NULL ON UPDATE CASCADE,
+    fetcher TEXT REFERENCES fetcher(id) ON DELETE SET NULL ON UPDATE CASCADE, -- NULL means internally sent
     header_id TEXT UNIQUE NOT NULL,
     header_in_reply_to TEXT NOT NULL,
     header_references TEXT[] NOT NULL,

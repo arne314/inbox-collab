@@ -2,6 +2,7 @@ package matrix
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"slices"
@@ -391,6 +392,55 @@ func (mc *MatrixClient) ReactToMessage(roomId string, messageId string, reaction
 		return ""
 	}
 	return resp.EventID.String()
+}
+
+type messageEvenContent struct {
+	RelatesTo struct {
+		EventId   string `json:"event_id"`
+		RelType   string `json:"rel_type"`
+		InReplyTo struct {
+			EventId string `json:"event_id"`
+		} `json:"m.in_reply_to"`
+	} `json:"m.relates_to"`
+}
+
+func (mc *MatrixClient) GetMessageThreadAndReply(roomId string, messageId string, content *event.MessageEventContent) (originalId, threadId, replyToId string) {
+	originalId = messageId
+	if rel := content.RelatesTo; rel != nil {
+		if rel.InReplyTo != nil {
+			replyToId = rel.InReplyTo.EventID.String()
+		}
+		switch rel.Type {
+		case event.RelThread:
+			threadId = rel.EventID.String()
+		case event.RelReplace:
+			ctx, cancel := mc.defaultContext()
+			defer cancel()
+			originalId = rel.EventID.String()
+			original, err := mc.client.GetEvent(ctx, id.RoomID(roomId), id.EventID(originalId))
+			if err != nil {
+				log.Errorf("Error getting replied to message from matrix: %v", err)
+				return
+			}
+			bin, err := json.Marshal(original.Content.Raw)
+			if err != nil {
+				log.Errorf("Error marshaling message event: %v", err)
+				return
+			}
+			var originalContent messageEvenContent
+			if err = json.Unmarshal(bin, &originalContent); err != nil {
+				log.Errorf("Error unmarshaling message event: %v", err)
+				return
+			}
+			if originalContent.RelatesTo.RelType == "m.thread" {
+				threadId = originalContent.RelatesTo.EventId
+			}
+			if originalContent.RelatesTo.InReplyTo.EventId != "" {
+				replyToId = originalContent.RelatesTo.InReplyTo.EventId
+			}
+		}
+	}
+	return
 }
 
 func (mc *MatrixClient) Sync() {

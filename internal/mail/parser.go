@@ -107,7 +107,7 @@ func (mf *MailFetcher) parseMessage(msg *imapclient.FetchMessageData) *Mail {
 		AddrFrom:    parseAddresses(envelope.GetHeader("From"), false)[0],
 		AddrTo:      parseAddresses(envelope.GetHeader("To"), true),
 		Subject:     envelope.GetHeader("Subject"),
-		Date:        date,
+		Date:        date.UTC(),
 		Text:        envelope.Text,
 		Attachments: attachments,
 	}
