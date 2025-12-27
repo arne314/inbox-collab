@@ -24,9 +24,12 @@ type MessageExtractor struct {
 func NewMessageExtractor(apiUrl string, mail model.Mail, threadHistory []*model.Mail) *MessageExtractor {
 	// mail is not a pointer as we want to modify its content
 	var llm LLM
-	if apiUrl == "passthrough" {
+	switch apiUrl {
+	case "passthrough":
 		llm = &LLMPassthrough{}
-	} else {
+	case "passthrough_test":
+		llm = &LLMPassthroughTest{}
+	default:
 		llm = &LLMPython{apiUrl: apiUrl}
 	}
 	body := strings.Clone(*mail.Body)
@@ -139,19 +142,15 @@ detectKnown:
 	}
 
 	// make sure the first message is new
-	if messageKnown[me.result.Messages[0]] {
-		if knownCount != len(me.result.Messages) {
-			for _, ext := range me.result.Messages {
-				// swap first with an unknown message
-				if !messageKnown[ext] {
-					tmp := me.result.Messages[0].Content
-					tmp2 := me.result.Messages[0].Author
-					me.result.Messages[0].Content = ext.Content
-					me.result.Messages[0].Author = ext.Author
-					ext.Content = tmp
-					ext.Author = tmp2
-					break
-				}
+	if messageKnown[me.result.Messages[0]] && knownCount != len(me.result.Messages) {
+		for i, ext := range me.result.Messages {
+			// move unknown message to the front
+			if !messageKnown[ext] {
+				me.result.Messages = append(
+					[]*db.Message{ext},
+					append(me.result.Messages[:i], me.result.Messages[i+1:]...)...,
+				)
+				break
 			}
 		}
 	}

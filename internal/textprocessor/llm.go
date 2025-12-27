@@ -25,6 +25,10 @@ type LLM interface {
 
 type LLMPassthrough struct{}
 
+type LLMPassthroughTest struct {
+	LLMPassthrough
+}
+
 func (llm *LLMPassthrough) GetPlaceholder() string {
 	return "\n"
 }
@@ -70,6 +74,10 @@ func (llm *LLMPython) GetPlaceholder() string {
 
 func (llm *LLMPython) IsPlaceholder(msg string) bool {
 	return placeholderRegex.FindStringIndex(msg) != nil
+}
+
+func (llm *LLMPassthroughTest) IsPlaceholder(msg string) bool {
+	return (&LLMPython{}).IsPlaceholder(msg)
 }
 
 func (llm *LLMPython) apiRequest(ctx context.Context, endpoint string, body []byte) ([]byte, error) {
