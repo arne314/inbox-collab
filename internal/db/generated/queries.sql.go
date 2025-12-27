@@ -236,6 +236,37 @@ func (q *Queries) GetMail(ctx context.Context, id int64) (*GetMailRow, error) {
 	return &i, err
 }
 
+const getMailByMatrixId = `-- name: GetMailByMatrixId :one
+SELECT id, fetcher, header_id, header_in_reply_to, header_references, timestamp, name_from, addr_from, addr_to, subject, body, attachments, messages, messages_last_update, sorted, reply_to, thread, matrix_id FROM mail
+WHERE matrix_id = $1 LIMIT 1
+`
+
+func (q *Queries) GetMailByMatrixId(ctx context.Context, matrixID pgtype.Text) (*Mail, error) {
+	row := q.db.QueryRow(ctx, getMailByMatrixId, matrixID)
+	var i Mail
+	err := row.Scan(
+		&i.ID,
+		&i.Fetcher,
+		&i.HeaderID,
+		&i.HeaderInReplyTo,
+		&i.HeaderReferences,
+		&i.Timestamp,
+		&i.NameFrom,
+		&i.AddrFrom,
+		&i.AddrTo,
+		&i.Subject,
+		&i.Body,
+		&i.Attachments,
+		&i.Messages,
+		&i.MessagesLastUpdate,
+		&i.Sorted,
+		&i.ReplyTo,
+		&i.Thread,
+		&i.MatrixID,
+	)
+	return &i, err
+}
+
 const getMailsByMessageIds = `-- name: GetMailsByMessageIds :many
 SELECT id, fetcher, header_id, header_in_reply_to, header_references, timestamp, name_from, addr_from, addr_to, subject, body, attachments, messages, messages_last_update, sorted, reply_to, thread, matrix_id FROM mail
 WHERE header_id = ANY($1::text[])
@@ -328,7 +359,7 @@ func (q *Queries) GetMailsByThread(ctx context.Context, thread pgtype.Int8) ([]*
 
 const getMailsRequiringMessageExtraction = `-- name: GetMailsRequiringMessageExtraction :many
 SELECT id, fetcher, header_id, header_in_reply_to, header_references, timestamp, name_from, addr_from, addr_to, subject, body, attachments, messages, messages_last_update, sorted, reply_to, thread, matrix_id FROM mail
-WHERE sorted AND messages ->> 'messages' IS NULL
+WHERE sorted AND fetcher IS NOT NULL AND messages ->> 'messages' IS NULL
 ORDER BY thread, timestamp
 `
 
