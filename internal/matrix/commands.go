@@ -50,7 +50,8 @@ var (
 		{name: "send", triggerOnEdit: true},
 		{name: "reply", triggerOnEdit: true},
 	}
-	commandRegex          *regexp.Regexp = regexp.MustCompile(`(?s)^\s*!\s*([a-zA-Z]+)\s*(.*)\s*$`)
+	// correctly handles cited commands
+	commandRegex          *regexp.Regexp = regexp.MustCompile(`(?s)(?:^|\n)\s*!\s*([a-zA-Z]+)\s*(.*)\s*$`)
 	argsRegex             *regexp.Regexp = regexp.MustCompile(`\S+`)
 	CommandStateReactions []string       = []string{"👀", "⏳", "✅", "❌"}
 	roomMutexes           map[string]*sync.Mutex
