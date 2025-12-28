@@ -333,7 +333,7 @@ func (mc *MatrixClient) MessageRedacted(roomId string, messageId string) bool {
 		log.Errorf("Error fetching matrix event: %v", err)
 		return true
 	}
-	return len(evt.Content.Raw) == 0
+	return evt.Unsigned.RedactedBecause != nil
 }
 
 func (mc *MatrixClient) EditRoomMessage(
