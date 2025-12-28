@@ -69,18 +69,40 @@ type Command struct {
 	threadId       string
 	replyToId      string
 	lastReactionId string
+	prevState      CommandState
+	edited         bool
 	content        *event.MessageEventContent
 
 	client  *MatrixClient
 	actions Actions
 }
 
+func (c *Command) cleanupState() {
+	c.originalId, c.threadId, c.replyToId = c.client.GetMessageThreadAndReply(c.roomId, c.messageId, c.content)
+	for id, reaction := range c.client.GetOwnReactions(c.roomId, c.originalId) {
+		if reaction != CommandStateReactions[Done] {
+			c.client.RedactMessage(c.roomId, id)
+			if c.prevState == Default {
+				for i, r := range CommandStateReactions {
+					if r == reaction {
+						c.prevState = CommandState(i)
+					}
+				}
+			}
+		} else {
+			c.prevState = Done
+		}
+	}
+}
+
 func (c *Command) reportState(state CommandState) {
 	c.state = state
-	if c.lastReactionId != "" {
-		c.client.RedactMessage(c.roomId, c.lastReactionId)
+	if c.prevState != Done { // don't update when already succeeded
+		if c.lastReactionId != "" {
+			c.client.RedactMessage(c.roomId, c.lastReactionId)
+		}
+		c.lastReactionId = c.client.ReactToMessage(c.roomId, c.originalId, CommandStateReactions[c.state])
 	}
-	c.lastReactionId = c.client.ReactToMessage(c.roomId, c.originalId, CommandStateReactions[c.state])
 	log.Infof("Command state of %v changed to %v", c.Name, CommandStateReactions[c.state])
 }
 
@@ -98,7 +120,7 @@ func (c *Command) Run(ctx context.Context) {
 		return
 	}
 	log.Infof("Handling command %v...", c.Name)
-	c.originalId, c.threadId, c.replyToId = c.client.GetMessageThreadAndReply(c.roomId, c.messageId, c.content)
+	c.cleanupState()
 
 	switch c.Name {
 	case "open", "o":
@@ -153,7 +175,9 @@ func (c *Command) Run(ctx context.Context) {
 	log.Infof("Done handling command %v", c.Name)
 }
 
-func NewCommand(name string, arg string, args []string, evt *event.Event, client *MatrixClient, actions Actions) *Command {
+func NewCommand(name string, arg string, args []string, edited bool,
+	evt *event.Event, client *MatrixClient, actions Actions,
+) *Command {
 	roomId := evt.RoomID.String()
 	messageId := evt.ID.String()
 	content := evt.Content.AsMessage()
@@ -165,6 +189,7 @@ func NewCommand(name string, arg string, args []string, evt *event.Event, client
 		event:     evt,
 		roomId:    roomId,
 		messageId: messageId,
+		edited:    edited,
 		content:   content,
 		client:    client,
 		actions:   actions,
@@ -212,7 +237,7 @@ func (ch *CommandHandler) ProcessMessage(ctx context.Context, evt *event.Event) 
 	for _, cfg := range commands {
 		if cfg.name == cmd {
 			if !edited || cfg.triggerOnEdit {
-				go NewCommand(cmd, arg, args, evt, ch.client, ch.Actions).Run(ctx)
+				go NewCommand(cmd, arg, args, edited, evt, ch.client, ch.Actions).Run(ctx)
 			}
 			break
 		}

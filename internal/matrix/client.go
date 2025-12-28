@@ -381,6 +381,28 @@ func (mc *MatrixClient) EditRoomMessage(
 	return true, messageId
 }
 
+func (mc *MatrixClient) GetOwnReactions(roomId string, messageId string) map[string]string {
+	ctx, cancel := mc.defaultContext()
+	defer cancel()
+	resp, err := mc.client.GetRelations(ctx, id.RoomID(roomId), id.EventID(messageId), &mautrix.ReqGetRelations{
+		RelationType: event.RelAnnotation,
+		Limit:        50,
+	})
+	if err != nil {
+		log.Errorf("Error getting reactions of message %s in room %s: %v", messageId, roomId, err)
+	}
+	reactions := make(map[string]string)
+	for _, evt := range resp.Chunk {
+		if evt.Sender == id.UserID(mc.Config.Username) {
+			relation, ok := parseRelationEventContent(evt.Content.Raw)
+			if ok {
+				reactions[evt.ID.String()] = relation.RelatesTo.Key
+			}
+		}
+	}
+	return reactions
+}
+
 func (mc *MatrixClient) ReactToMessage(roomId string, messageId string, reaction string) string {
 	ctx, cancel := mc.defaultContext()
 	defer cancel()
@@ -394,14 +416,28 @@ func (mc *MatrixClient) ReactToMessage(roomId string, messageId string, reaction
 	return resp.EventID.String()
 }
 
-type messageEvenContent struct {
+type relationEventContent struct {
 	RelatesTo struct {
 		EventId   string `json:"event_id"`
 		RelType   string `json:"rel_type"`
+		Key       string `json:"key"`
 		InReplyTo struct {
 			EventId string `json:"event_id"`
 		} `json:"m.in_reply_to"`
 	} `json:"m.relates_to"`
+}
+
+func parseRelationEventContent(content any) (res relationEventContent, ok bool) {
+	bin, err := json.Marshal(content)
+	if err != nil {
+		log.Errorf("Error marshaling relation event: %v", err)
+		return
+	}
+	if err = json.Unmarshal(bin, &res); err != nil {
+		log.Errorf("Error unmarshaling relation event: %v", err)
+		return
+	}
+	return res, true
 }
 
 func (mc *MatrixClient) GetMessageThreadAndReply(roomId string, messageId string, content *event.MessageEventContent) (originalId, threadId, replyToId string) {
@@ -422,14 +458,9 @@ func (mc *MatrixClient) GetMessageThreadAndReply(roomId string, messageId string
 				log.Errorf("Error getting replied to message from matrix: %v", err)
 				return
 			}
-			bin, err := json.Marshal(original.Content.Raw)
-			if err != nil {
-				log.Errorf("Error marshaling message event: %v", err)
-				return
-			}
-			var originalContent messageEvenContent
-			if err = json.Unmarshal(bin, &originalContent); err != nil {
-				log.Errorf("Error unmarshaling message event: %v", err)
+			originalContent, ok := parseRelationEventContent(original.Content.Raw)
+			if !ok {
+				log.Errorf("Error parsing original event content")
 				return
 			}
 			if originalContent.RelatesTo.RelType == "m.thread" {
