@@ -3,6 +3,7 @@ package mail
 import (
 	"crypto/sha256"
 	"fmt"
+	"regexp"
 	"slices"
 	"strings"
 	"sync"
@@ -87,6 +88,8 @@ func (ms *MailSender) createSimplemailEmail(mail *Mail) *simplemail.Email {
 		SetBody(simplemail.TextPlain, mail.Text)
 }
 
+var replyStackRegex *regexp.Regexp = regexp.MustCompile(`(?i)^(Re:\s*)+`)
+
 // login and send mail via smtp
 func (ms *MailSender) SendReplyMail(reply string, cite string, originalSubject string,
 	originalTimestamp time.Time, originalId string, originalReferences []string, nameTo string, addrTo string,
@@ -108,7 +111,7 @@ func (ms *MailSender) SendReplyMail(reply string, cite string, originalSubject s
 		addressee = addrTo
 		citeAuthor = addrTo
 	}
-	subject = fmt.Sprintf("Re: %s", originalSubject)
+	subject = fmt.Sprintf("Re: %s", replyStackRegex.ReplaceAllString(strings.TrimSpace(originalSubject), ""))
 	reply = normalizeMessage(reply)
 	if strings.TrimSpace(cite) != "" {
 		cite = strings.ReplaceAll("\n"+normalizeMessage(cite), "\n", "\n> ")
