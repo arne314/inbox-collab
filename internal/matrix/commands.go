@@ -78,7 +78,7 @@ type Command struct {
 }
 
 func (c *Command) cleanupState() {
-	c.originalId, c.threadId, c.replyToId = c.client.GetMessageThreadAndReply(c.roomId, c.messageId, c.content)
+	c.originalId, c.threadId, c.replyToId = c.client.GetMessageThreadAndReply(c.roomId, c.messageId, c.event)
 	for id, reaction := range c.client.GetOwnReactions(c.roomId, c.originalId) {
 		if reaction != CommandStateReactions[Done] {
 			c.client.RedactMessage(c.roomId, id)

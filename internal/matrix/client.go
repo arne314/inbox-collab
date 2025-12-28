@@ -440,38 +440,53 @@ func parseRelationEventContent(content any) (res relationEventContent, ok bool) 
 	return res, true
 }
 
-func (mc *MatrixClient) GetMessageThreadAndReply(roomId string, messageId string, content *event.MessageEventContent) (originalId, threadId, replyToId string) {
-	originalId = messageId
-	if rel := content.RelatesTo; rel != nil {
-		if rel.InReplyTo != nil {
-			replyToId = rel.InReplyTo.EventID.String()
+// gets the original message id in case of edits
+func (mc *MatrixClient) GetOriginalMessageId(roomId, messageId string) string {
+	ctx, cancel := mc.defaultContext()
+	defer cancel()
+	original, err := mc.client.GetEvent(ctx, id.RoomID(roomId), id.EventID(messageId))
+	if err != nil {
+		log.Errorf("Error getting original message from matrix: %v", err)
+		return ""
+	}
+	if originalContent, ok := parseRelationEventContent(original.Content.Raw); ok {
+		if originalContent.RelatesTo.RelType == "m.thread" {
+			return original.ID.String()
 		}
-		switch rel.Type {
-		case event.RelThread:
-			threadId = rel.EventID.String()
-		case event.RelReplace:
-			ctx, cancel := mc.defaultContext()
-			defer cancel()
-			originalId = rel.EventID.String()
-			original, err := mc.client.GetEvent(ctx, id.RoomID(roomId), id.EventID(originalId))
-			if err != nil {
-				log.Errorf("Error getting replied to message from matrix: %v", err)
-				return
-			}
-			originalContent, ok := parseRelationEventContent(original.Content.Raw)
-			if !ok {
-				log.Errorf("Error parsing original event content")
-				return
-			}
-			if originalContent.RelatesTo.RelType == "m.thread" {
-				threadId = originalContent.RelatesTo.EventId
-			}
-			if originalContent.RelatesTo.InReplyTo.EventId != "" {
-				replyToId = originalContent.RelatesTo.InReplyTo.EventId
-			}
+	} else {
+		log.Errorf("Error parsing original event content")
+	}
+	return messageId
+}
+
+func (mc *MatrixClient) getMessageThreadAndReply(roomId string, messageId string, content relationEventContent) (originalId, threadId, replyToId string) {
+	rel := content.RelatesTo
+	switch rel.RelType {
+	case "m.thread":
+		originalId = messageId
+		threadId = rel.EventId
+		if rel.InReplyTo.EventId != "" {
+			replyToId = mc.GetOriginalMessageId(roomId, rel.InReplyTo.EventId)
 		}
+	case "m.replace":
+		ctx, cancel := mc.defaultContext()
+		defer cancel()
+		original, err := mc.client.GetEvent(ctx, id.RoomID(roomId), id.EventID(originalId))
+		if err != nil {
+			log.Errorf("Error getting original event from matrix: %v", err)
+			return
+		}
+		return mc.GetMessageThreadAndReply(roomId, rel.EventId, original)
 	}
 	return
+}
+
+func (mc *MatrixClient) GetMessageThreadAndReply(roomId string, messageId string, evt *event.Event) (originalId, threadId, replyToId string) {
+	content, ok := parseRelationEventContent(evt.Content.Raw)
+	if !ok {
+		log.Errorf("Error parsing event content")
+	}
+	return mc.getMessageThreadAndReply(roomId, messageId, content)
 }
 
 func (mc *MatrixClient) Sync() {
