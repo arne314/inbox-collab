@@ -89,6 +89,17 @@ func (dh *DbHandler) GetMailById(ctx context.Context, id int64) *db.GetMailRow {
 	return mail
 }
 
+func (dh *DbHandler) GetMailByMatrixId(ctx context.Context, matrixId string) *db.Mail {
+	ctx, cancel := defaultContext(ctx)
+	defer cancel()
+	mail, err := dh.queries.GetMailByMatrixId(ctx, pgtype.Text{Valid: true, String: matrixId})
+	if err != nil {
+		log.Errorf("Failed to fetch mail by matrix id %v: %v", matrixId, err)
+		return nil
+	}
+	return mail
+}
+
 type getMailsQuery func(ctx context.Context) ([]*db.Mail, error)
 
 func getMails(ctx context.Context, query getMailsQuery, mailTypeLogMsg string) []*db.Mail {

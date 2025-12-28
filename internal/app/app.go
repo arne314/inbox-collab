@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"fmt"
 	"slices"
 	"strings"
 	"sync"
@@ -11,8 +12,9 @@ import (
 	log "github.com/sirupsen/logrus"
 
 	cfg "github.com/arne314/inbox-collab/internal/config"
-	"github.com/arne314/inbox-collab/internal/db"
+	db "github.com/arne314/inbox-collab/internal/db"
 	model "github.com/arne314/inbox-collab/internal/db/generated"
+	modelcustom "github.com/arne314/inbox-collab/internal/db/sqlc"
 	"github.com/arne314/inbox-collab/internal/mail"
 	"github.com/arne314/inbox-collab/internal/matrix"
 )
@@ -80,6 +82,22 @@ func (ic *InboxCollab) Setup(
 	ic.setupMatrixOverviewStage()
 }
 
+func modelMailForDb(mail *mail.Mail) *model.Mail {
+	return &model.Mail{
+		Fetcher:          pgtype.Text{String: mail.Fetcher, Valid: mail.Fetcher != ""},
+		HeaderID:         mail.MessageId,
+		HeaderInReplyTo:  mail.InReplyTo,
+		HeaderReferences: mail.References,
+		Subject:          mail.Subject,
+		Timestamp:        pgtype.Timestamp{Time: mail.Date, Valid: true},
+		Attachments:      mail.Attachments,
+		NameFrom:         mail.NameFrom,
+		AddrFrom:         mail.AddrFrom,
+		AddrTo:           mail.AddrTo,
+		Body:             &mail.Text,
+	}
+}
+
 func (ic *InboxCollab) storeMails(waitGroup *sync.WaitGroup) {
 	defer waitGroup.Done()
 	ctx := context.Background()
@@ -87,19 +105,7 @@ func (ic *InboxCollab) storeMails(waitGroup *sync.WaitGroup) {
 	for chunk := range ic.fetchedMails {
 		modelled := make([]*model.Mail, len(chunk))
 		for i, mail := range chunk {
-			modelled[i] = &model.Mail{
-				Fetcher:          pgtype.Text{String: mail.Fetcher, Valid: true},
-				HeaderID:         mail.MessageId,
-				HeaderInReplyTo:  mail.InReplyTo,
-				HeaderReferences: mail.References,
-				Subject:          mail.Subject,
-				Timestamp:        pgtype.Timestamp{Time: mail.Date, Valid: true},
-				Attachments:      mail.Attachments,
-				NameFrom:         mail.NameFrom,
-				AddrFrom:         mail.AddrFrom,
-				AddrTo:           mail.AddrTo,
-				Body:             &mail.Text,
-			}
+			modelled[i] = modelMailForDb(mail)
 		}
 		nFetched := ic.dbHandler.AddMails(ctx, modelled)
 		if nFetched > 0 || initial {
@@ -179,6 +185,54 @@ func (ic *InboxCollab) MoveThread(ctx context.Context, roomId string, threadId s
 	}()
 	wg.Wait()
 	return true
+}
+
+func (ic *InboxCollab) ReplyToMailInThread(ctx context.Context, roomId string, originalMessageId string, replyToId string, text string, cite bool) error {
+	sender := ic.mailHandler.GetMailSender(ic.Config.Matrix.GetRoomSender(roomId))
+	if sender == nil {
+		return fmt.Errorf("No sender configured for this room")
+	}
+	if existing := ic.dbHandler.GetMailByMatrixId(ctx, originalMessageId); existing != nil {
+		return fmt.Errorf("Your edit has been ignored as this reply had already been sent. Send a new message to add another reply.")
+	}
+	original := ic.dbHandler.GetMailByMatrixId(ctx, replyToId)
+	if original == nil {
+		return fmt.Errorf("This is not a valid mail to reply to. Choose one by directly replying to it on matrix.")
+	}
+
+	// send mail
+	ic.LockThreadSorting() // we are manually sorting this mail
+	defer ic.UnlockThreadSorting()
+	var cited string
+	if cite {
+		cited = *original.Body
+	}
+	err, newMail, message := sender.SendReplyMail(
+		text, cited, original.Subject, original.Timestamp.Time, original.HeaderID, original.HeaderReferences,
+		original.NameFrom, original.AddrFrom,
+	)
+	if err != nil {
+		return err
+	}
+
+	// properly add mail to db
+	ic.dbHandler.AddMails(ctx, []*model.Mail{modelMailForDb(newMail)})
+	var newMailModel *model.Mail
+	if byId := ic.dbHandler.GetMailsByMessageIds(ctx, []string{newMail.MessageId}); len(byId) > 0 {
+		newMailModel = byId[0]
+	} else {
+		return fmt.Errorf("Database issue, try again later")
+	}
+	newMailModel.Messages = &modelcustom.ExtractedMessages{
+		Messages: []*modelcustom.Message{
+			{Author: newMailModel.NameFrom, Timestamp: &newMailModel.Timestamp.Time, Content: &message},
+		},
+	}
+	ic.dbHandler.UpdateExtractedMessages(ctx, newMailModel)
+	ic.dbHandler.AddMailToThread(ctx, newMailModel, original.Thread.Int64)
+	ic.dbHandler.UpdateMailMatrixId(ctx, newMailModel.ID, originalMessageId)
+	ic.QueueMatrixOverviewUpdate([]string{roomId}, true)
+	return nil
 }
 
 func (ic *InboxCollab) ResendThreadOverview(ctx context.Context, roomId string) bool {

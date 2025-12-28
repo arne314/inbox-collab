@@ -2,6 +2,7 @@ package matrix
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"slices"
@@ -380,6 +381,28 @@ func (mc *MatrixClient) EditRoomMessage(
 	return true, messageId
 }
 
+func (mc *MatrixClient) GetOwnReactions(roomId string, messageId string) map[string]string {
+	ctx, cancel := mc.defaultContext()
+	defer cancel()
+	resp, err := mc.client.GetRelations(ctx, id.RoomID(roomId), id.EventID(messageId), &mautrix.ReqGetRelations{
+		RelationType: event.RelAnnotation,
+		Limit:        50,
+	})
+	if err != nil {
+		log.Errorf("Error getting reactions of message %s in room %s: %v", messageId, roomId, err)
+	}
+	reactions := make(map[string]string)
+	for _, evt := range resp.Chunk {
+		if evt.Sender == id.UserID(mc.Config.Username) {
+			relation, ok := parseRelationEventContent(evt.Content.Raw)
+			if ok {
+				reactions[evt.ID.String()] = relation.RelatesTo.Key
+			}
+		}
+	}
+	return reactions
+}
+
 func (mc *MatrixClient) ReactToMessage(roomId string, messageId string, reaction string) string {
 	ctx, cancel := mc.defaultContext()
 	defer cancel()
@@ -391,6 +414,79 @@ func (mc *MatrixClient) ReactToMessage(roomId string, messageId string, reaction
 		return ""
 	}
 	return resp.EventID.String()
+}
+
+type relationEventContent struct {
+	RelatesTo struct {
+		EventId   string `json:"event_id"`
+		RelType   string `json:"rel_type"`
+		Key       string `json:"key"`
+		InReplyTo struct {
+			EventId string `json:"event_id"`
+		} `json:"m.in_reply_to"`
+	} `json:"m.relates_to"`
+}
+
+func parseRelationEventContent(content any) (res relationEventContent, ok bool) {
+	bin, err := json.Marshal(content)
+	if err != nil {
+		log.Errorf("Error marshaling relation event: %v", err)
+		return
+	}
+	if err = json.Unmarshal(bin, &res); err != nil {
+		log.Errorf("Error unmarshaling relation event: %v", err)
+		return
+	}
+	return res, true
+}
+
+// gets the original message id in case of edits
+func (mc *MatrixClient) GetOriginalMessageId(roomId, messageId string) string {
+	ctx, cancel := mc.defaultContext()
+	defer cancel()
+	original, err := mc.client.GetEvent(ctx, id.RoomID(roomId), id.EventID(messageId))
+	if err != nil {
+		log.Errorf("Error getting original message from matrix: %v", err)
+		return ""
+	}
+	if originalContent, ok := parseRelationEventContent(original.Content.Raw); ok {
+		if originalContent.RelatesTo.RelType == "m.thread" {
+			return original.ID.String()
+		}
+	} else {
+		log.Errorf("Error parsing original event content")
+	}
+	return messageId
+}
+
+func (mc *MatrixClient) getMessageThreadAndReply(roomId string, messageId string, content relationEventContent) (originalId, threadId, replyToId string) {
+	rel := content.RelatesTo
+	switch rel.RelType {
+	case "m.thread":
+		originalId = messageId
+		threadId = rel.EventId
+		if rel.InReplyTo.EventId != "" {
+			replyToId = mc.GetOriginalMessageId(roomId, rel.InReplyTo.EventId)
+		}
+	case "m.replace":
+		ctx, cancel := mc.defaultContext()
+		defer cancel()
+		original, err := mc.client.GetEvent(ctx, id.RoomID(roomId), id.EventID(originalId))
+		if err != nil {
+			log.Errorf("Error getting original event from matrix: %v", err)
+			return
+		}
+		return mc.GetMessageThreadAndReply(roomId, rel.EventId, original)
+	}
+	return
+}
+
+func (mc *MatrixClient) GetMessageThreadAndReply(roomId string, messageId string, evt *event.Event) (originalId, threadId, replyToId string) {
+	content, ok := parseRelationEventContent(evt.Content.Raw)
+	if !ok {
+		log.Errorf("Error parsing event content")
+	}
+	return mc.getMessageThreadAndReply(roomId, messageId, content)
 }
 
 func (mc *MatrixClient) Sync() {

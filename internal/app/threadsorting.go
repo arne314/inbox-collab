@@ -2,13 +2,27 @@ package app
 
 import (
 	"context"
+	"sync"
 	"time"
 
 	log "github.com/sirupsen/logrus"
 )
 
+var threadSortingMutex sync.Mutex
+
+func (ic *InboxCollab) LockThreadSorting() {
+	threadSortingMutex.Lock()
+}
+
+func (ic *InboxCollab) UnlockThreadSorting() {
+	threadSortingMutex.Unlock()
+}
+
 func (ic *InboxCollab) setupThreadSortingStage() {
 	work := func(ctx context.Context) bool {
+		threadSortingMutex.Lock()
+		defer threadSortingMutex.Unlock()
+
 		timeSinceMailboxUpdate := time.Since(ic.mailHandler.GetLastMailboxUpdate()).Seconds()
 		timeSinceSortRequest := ThreadSortingStage.TimeSinceQueued().Seconds()
 		waitForCompleteData := timeSinceMailboxUpdate < 5 && timeSinceSortRequest < 120 // timeout

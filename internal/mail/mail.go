@@ -11,8 +11,30 @@ import (
 
 var mailboxUpdateMutex sync.RWMutex
 
+type Mail struct {
+	Fetcher     string
+	NameFrom    string
+	AddrFrom    string
+	Subject     string
+	Date        time.Time
+	Text        string
+	MessageId   string
+	InReplyTo   string
+	References  []string
+	AddrTo      []string
+	Attachments []string
+}
+
+func (m *Mail) String() string {
+	return fmt.Sprintf(
+		"Mail %v on %v from %v to %v with subject %v and attachments %v",
+		m.MessageId, m.Date, m.AddrFrom, m.AddrTo, m.Subject, m.Attachments,
+	)
+}
+
 type MailHandler struct {
 	fetchers          []*MailFetcher
+	senders           map[string]*MailSender
 	Config            *config.MailConfig
 	fetchedMails      chan []*Mail
 	lastMailboxUpdate time.Time
@@ -27,6 +49,7 @@ func (mh *MailHandler) Setup(
 	var waitGroup sync.WaitGroup
 	mh.fetchedMails = fetchedMails
 	mh.StateStorage = stateStorage
+	mh.senders = make(map[string]*MailSender)
 
 	for name, cfg := range mh.Config.Sources {
 		for _, mailbox := range cfg.Mailboxes {
@@ -43,7 +66,7 @@ func (mh *MailHandler) Setup(
 			waitGroup.Add(1)
 			go func(f *MailFetcher) {
 				if !f.Setup() {
-					log.Panicf("Unable to connect MailFetcher %v", name)
+					log.Fatalf("Unable to connect MailFetcher %v", f.name)
 				}
 				waitGroup.Done()
 			}(fetcher)
@@ -53,8 +76,24 @@ func (mh *MailHandler) Setup(
 			}
 		}
 	}
+
+	for name, cfg := range mh.Config.Senders {
+		sender := NewMailSender(name, cfg, mh.Config)
+		waitGroup.Add(1)
+		go func(s *MailSender) {
+			if !s.TestConnection() {
+				log.Fatalf("Unable to use MailSender %v", s.name)
+			}
+			waitGroup.Done()
+		}(sender)
+		mh.senders[name] = sender
+	}
 	waitGroup.Wait()
 	log.Infof("Setup MailHandler")
+}
+
+func (mh *MailHandler) GetMailSender(name string) *MailSender {
+	return mh.senders[name]
 }
 
 func (mh *MailHandler) MailboxUpdated() {

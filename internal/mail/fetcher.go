@@ -3,7 +3,6 @@ package mail
 import (
 	"context"
 	"fmt"
-	"regexp"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -15,27 +14,6 @@ import (
 
 	"github.com/arne314/inbox-collab/internal/config"
 )
-
-type Mail struct {
-	Fetcher     string
-	NameFrom    string
-	AddrFrom    string
-	Subject     string
-	Date        time.Time
-	Text        string
-	MessageId   string
-	InReplyTo   string
-	References  []string
-	AddrTo      []string
-	Attachments []string
-}
-
-func (m *Mail) String() string {
-	return fmt.Sprintf(
-		"Mail %v on %v from %v to %v with subject %v and attachments %v",
-		m.MessageId, m.Date, m.AddrFrom, m.AddrTo, m.Subject, m.Attachments,
-	)
-}
 
 type FetcherStateStorage interface {
 	GetState(ctx context.Context, id string) (uint32, uint32)
@@ -52,9 +30,6 @@ type MailFetcher struct {
 	isIdle         bool
 	idleMutex      sync.Mutex
 	isReconnecting atomic.Bool
-	nameFromRegex  *regexp.Regexp
-	addressRegex   *regexp.Regexp
-	idRegex        *regexp.Regexp
 
 	uidLast     uint32
 	uidValidity uint32
@@ -88,12 +63,6 @@ func NewMailFetcher(
 		ctx:              ctx,
 		cancel:           cancel,
 		closed:           make(chan struct{}, 1),
-
-		nameFromRegex: regexp.MustCompile(`(?i)\"?\s*([^<>\" ][^<>\"]+[^<>\" ])\"?\s*<`),
-		addressRegex: regexp.MustCompile(
-			`(?i)<?([a-zA-Z0-9%+-][a-zA-Z0-9.+-_{}\(\)\[\]'"\\#\$%\^\?/=&!\*\|~]*@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})>?`,
-		),
-		idRegex: regexp.MustCompile(`(?i)<([^@ ]+@[^@ ]+)>`),
 	}
 	mailfetcher.loadState()
 	return mailfetcher
