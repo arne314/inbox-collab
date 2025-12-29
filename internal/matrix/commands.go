@@ -45,36 +45,42 @@ const (
 var (
 	commands []CommandConfig = []CommandConfig{
 		{
+			name: "help", aliases: []string{"h"},
+			description: "Get an overview of all available commands.",
+		},
+		{
 			name: "close", aliases: []string{"c"}, thread: true,
-			description: "",
+			description: "Close a thread until it receives a new mail.",
 		},
 		{
 			name: "forceclose", aliases: []string{"fc"}, thread: true,
-			description: "",
+			description: "Close a thread forever unless manually reopend.",
 		},
 		{
 			name: "open", aliases: []string{"o"}, thread: true,
-			description: "",
+			description: "Manually reopen a closed thread.",
 		},
 		{
 			name: "move", thread: true,
-			description: "",
+			description: "Move a thread into another room. Usage: `!move <room name substring>`",
 		},
 		{
 			name: "reply", triggerOnEdit: true, thread: true,
-			description: "",
+			description: "Reply to an email by replying to it on Matrix. " +
+				"Usage: Reply to a message with `!reply <response text>`. " +
+				"Editing and adding the `!reply` prefix afterwards is allowed.",
 		},
 		{
 			name: "send", triggerOnEdit: true, thread: true,
-			description: "",
+			description: "Same as `!reply` but won't cite the original message.",
 		},
 		{
 			name: "resendoverview", admin: true,
-			description: "",
+			description: "Recreate overview message in this room.",
 		},
 		{
 			name: "resendoverviewall", admin: true,
-			description: "",
+			description: "Recreate all overview messages.",
 		},
 	}
 	// correctly handles cited commands
@@ -146,6 +152,22 @@ func (c *Command) reportStateMessageFormatted(message string, messageHtml string
 	}
 }
 
+func (c *Command) helpCommand() {
+	builder := NewTextHtmlBuilder()
+	builder.WriteLine(formatBold("Command Overview"))
+	for _, cmd := range commands {
+		for i, handle := range append([]string{cmd.name}, cmd.aliases...) {
+			handle = fmt.Sprintf("!%s", handle)
+			builder.Write(formatCode(handle))
+			if i != len(cmd.aliases) {
+				builder.Write(", ", ", ")
+			}
+		}
+		builder.WriteLine(convertMdCode(fmt.Sprintf(": %s", cmd.description)))
+	}
+	c.reportStateMessageFormatted(builder.String())
+}
+
 func (c *Command) Run(ctx context.Context) {
 	if lock, ok := roomMutexes[c.roomId]; ok {
 		lock.Lock()
@@ -160,11 +182,14 @@ func (c *Command) Run(ctx context.Context) {
 
 	if c.Config.thread && c.threadId == "" {
 		ok = false
-		c.reportStateMessage(fmt.Sprintf("Error: The command `!%s` is expected to be used in a thread.", c.Name))
+		c.reportStateMessageFormatted(convertMdCode(
+			fmt.Sprintf("Error: The command `!%s` is expected to be used in a thread.", c.Name)))
 	}
 
 	if ok {
 		switch c.Name {
+		case "help":
+			c.helpCommand()
 		case "open":
 			ok = c.actions.OpenThread(ctx, c.roomId, c.threadId)
 		case "close":
