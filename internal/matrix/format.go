@@ -2,6 +2,7 @@ package matrix
 
 import (
 	"fmt"
+	"net/url"
 	"strings"
 	"time"
 )
@@ -96,6 +97,10 @@ func formatTime(timestamp time.Time, timezone string) string {
 }
 
 func formatMessageLink(roomId, messageId, homeServer string) string {
+	parsedUrl, err := url.Parse(homeServer)
+	if err == nil {
+		homeServer = parsedUrl.Host + parsedUrl.RequestURI()
+	}
 	return fmt.Sprintf(
 		"https://matrix.to/#/%s/%s?via=%s",
 		roomId, messageId, homeServer,
