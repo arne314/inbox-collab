@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"regexp"
+	"slices"
 	"strings"
 	"sync"
 
@@ -27,7 +28,11 @@ type CommandState int
 
 type CommandConfig struct {
 	name          string
+	aliases       []string
+	description   string
 	triggerOnEdit bool
+	thread        bool
+	admin         bool
 }
 
 const (
@@ -39,16 +44,38 @@ const (
 
 var (
 	commands []CommandConfig = []CommandConfig{
-		{name: "o"},
-		{name: "open"},
-		{name: "c"},
-		{name: "close"},
-		{name: "forceclose"},
-		{name: "move"},
-		{name: "resendoverview"},
-		{name: "resendoverviewall"},
-		{name: "send", triggerOnEdit: true},
-		{name: "reply", triggerOnEdit: true},
+		{
+			name: "close", aliases: []string{"c"}, thread: true,
+			description: "",
+		},
+		{
+			name: "forceclose", aliases: []string{"fc"}, thread: true,
+			description: "",
+		},
+		{
+			name: "open", aliases: []string{"o"}, thread: true,
+			description: "",
+		},
+		{
+			name: "move", thread: true,
+			description: "",
+		},
+		{
+			name: "reply", triggerOnEdit: true, thread: true,
+			description: "",
+		},
+		{
+			name: "send", triggerOnEdit: true, thread: true,
+			description: "",
+		},
+		{
+			name: "resendoverview", admin: true,
+			description: "",
+		},
+		{
+			name: "resendoverviewall", admin: true,
+			description: "",
+		},
 	}
 	// correctly handles cited commands
 	commandRegex          *regexp.Regexp = regexp.MustCompile(`(?s)(?:^|\n)\s*!\s*([a-zA-Z]+)\s*(.*)\s*$`)
@@ -59,6 +86,7 @@ var (
 
 type Command struct {
 	Name           string
+	Config         *CommandConfig
 	Arg            string
 	Args           []string
 	state          CommandState
@@ -107,11 +135,18 @@ func (c *Command) reportState(state CommandState) {
 }
 
 func (c *Command) reportStateMessage(message string) {
-	c.client.SendThreadMessage(c.roomId, c.threadId, message, message, true)
+	c.reportStateMessageFormatted(message, message)
+}
+
+func (c *Command) reportStateMessageFormatted(message string, messageHtml string) {
+	if c.threadId == "" {
+		c.client.SendRoomMessage(c.roomId, message, messageHtml)
+	} else {
+		c.client.SendThreadMessage(c.roomId, c.threadId, message, messageHtml, true)
+	}
 }
 
 func (c *Command) Run(ctx context.Context) {
-	var ok bool
 	if lock, ok := roomMutexes[c.roomId]; ok {
 		lock.Lock()
 		defer lock.Unlock()
@@ -119,52 +154,44 @@ func (c *Command) Run(ctx context.Context) {
 		log.Warnf("Ignoring command in invalid room: %v", c.roomId)
 		return
 	}
+	ok := true
 	log.Infof("Handling command %v...", c.Name)
 	c.cleanupState()
 
-	switch c.Name {
-	case "open", "o":
-		if c.threadId == "" {
-			ok = false
-		} else {
+	if c.Config.thread && c.threadId == "" {
+		ok = false
+		c.reportStateMessage(fmt.Sprintf("Error: The command `!%s` is expected to be used in a thread.", c.Name))
+	}
+
+	if ok {
+		switch c.Name {
+		case "open":
 			ok = c.actions.OpenThread(ctx, c.roomId, c.threadId)
-		}
-	case "close", "c":
-		if c.threadId == "" {
-			ok = false
-		} else {
+		case "close":
 			ok = c.actions.CloseThread(ctx, c.roomId, c.threadId)
-		}
-	case "forceclose":
-		if c.threadId == "" {
-			ok = false
-		} else {
+		case "forceclose":
 			ok = c.actions.ForceCloseThread(ctx, c.roomId, c.threadId)
-		}
-	case "move":
-		if c.threadId == "" {
-			ok = false
-		} else {
+		case "move":
 			c.reportState(Pending)
 			ok = c.actions.MoveThread(ctx, c.roomId, c.threadId, c.Arg)
+		case "resendoverview":
+			c.reportState(Pending)
+			ok = c.actions.ResendThreadOverview(ctx, c.roomId)
+		case "resendoverviewall":
+			c.reportState(Pending)
+			ok = c.actions.ResendThreadOverviewAll(ctx)
+		case "reply", "send":
+			c.reportState(Pending)
+			cite := c.Name == "reply"
+			err := c.actions.ReplyToMailInThread(ctx, c.roomId, c.originalId, c.replyToId, c.Arg, cite)
+			ok = err == nil
+			if !ok {
+				log.Errorf("Error handling command %s: %v", c.Name, err)
+				c.reportStateMessage(fmt.Sprintf("Error: %v", err))
+			}
+		default:
+			ok = false
 		}
-	case "resendoverview":
-		c.reportState(Pending)
-		ok = c.actions.ResendThreadOverview(ctx, c.roomId)
-	case "resendoverviewall":
-		c.reportState(Pending)
-		ok = c.actions.ResendThreadOverviewAll(ctx)
-	case "reply", "send":
-		c.reportState(Pending)
-		cite := c.Name == "reply"
-		err := c.actions.ReplyToMailInThread(ctx, c.roomId, c.originalId, c.replyToId, c.Arg, cite)
-		ok = err == nil
-		if !ok {
-			log.Errorf("Error handling command %s: %v", c.Name, err)
-			c.reportStateMessage(fmt.Sprintf("Error: %v", err))
-		}
-	default:
-		ok = false
 	}
 
 	if ok {
@@ -175,14 +202,15 @@ func (c *Command) Run(ctx context.Context) {
 	log.Infof("Done handling command %v", c.Name)
 }
 
-func NewCommand(name string, arg string, args []string, edited bool,
+func NewCommand(config *CommandConfig, arg string, args []string, edited bool,
 	evt *event.Event, client *MatrixClient, actions Actions,
 ) *Command {
 	roomId := evt.RoomID.String()
 	messageId := evt.ID.String()
 	content := evt.Content.AsMessage()
 	return &Command{
-		Name:      name,
+		Name:      config.name,
+		Config:    config,
 		Arg:       arg,
 		Args:      args,
 		state:     Default,
@@ -235,9 +263,9 @@ func (ch *CommandHandler) ProcessMessage(ctx context.Context, evt *event.Event) 
 
 	// run command if available
 	for _, cfg := range commands {
-		if cfg.name == cmd {
+		if cfg.name == cmd || slices.Contains(cfg.aliases, cmd) {
 			if !edited || cfg.triggerOnEdit {
-				go NewCommand(cmd, arg, args, edited, evt, ch.client, ch.Actions).Run(ctx)
+				go NewCommand(&cfg, arg, args, edited, evt, ch.client, ch.Actions).Run(ctx)
 			}
 			break
 		}

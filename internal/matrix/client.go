@@ -388,15 +388,16 @@ func (mc *MatrixClient) GetOwnReactions(roomId string, messageId string) map[str
 		RelationType: event.RelAnnotation,
 		Limit:        50,
 	})
+	reactions := make(map[string]string)
 	if err != nil {
 		log.Errorf("Error getting reactions of message %s in room %s: %v", messageId, roomId, err)
-	}
-	reactions := make(map[string]string)
-	for _, evt := range resp.Chunk {
-		if evt.Sender == id.UserID(mc.Config.Username) {
-			relation, ok := parseRelationEventContent(evt.Content.Raw)
-			if ok {
-				reactions[evt.ID.String()] = relation.RelatesTo.Key
+	} else {
+		for _, evt := range resp.Chunk {
+			if evt.Sender == id.UserID(mc.Config.Username) {
+				relation, ok := parseRelationEventContent(evt.Content.Raw)
+				if ok {
+					reactions[evt.ID.String()] = relation.RelatesTo.Key
+				}
 			}
 		}
 	}
@@ -463,11 +464,7 @@ func (mc *MatrixClient) getMessageThreadAndReply(roomId string, messageId string
 	rel := content.RelatesTo
 	switch rel.RelType {
 	case "m.thread":
-		originalId = messageId
 		threadId = rel.EventId
-		if rel.InReplyTo.EventId != "" {
-			replyToId = mc.GetOriginalMessageId(roomId, rel.InReplyTo.EventId)
-		}
 	case "m.replace":
 		ctx, cancel := mc.defaultContext()
 		defer cancel()
@@ -477,6 +474,10 @@ func (mc *MatrixClient) getMessageThreadAndReply(roomId string, messageId string
 			return
 		}
 		return mc.GetMessageThreadAndReply(roomId, rel.EventId, original)
+	}
+	originalId = messageId
+	if rel.InReplyTo.EventId != "" {
+		replyToId = mc.GetOriginalMessageId(roomId, rel.InReplyTo.EventId)
 	}
 	return
 }
