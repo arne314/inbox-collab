@@ -11,9 +11,22 @@ mailboxes = ["INBOX", "Sent Items", "Trash"]
 hostname = "imapother.example.com"
 port = 993
 
+[mail.senders.main]
+hostname = "smtp.example.com"
+port = 465
+addr_from = "Inbox Collab <ic@example.com>"
+addr_cc = ["mate@example.com"]
+addr_bcc = ["log@example.com", "log-backup@example.com"]
+
+[mail.senders.other]
+hostname = "smtpother.example.com"
+port = 465
+addr_from = "My Name <name@example.com>"
+
 [matrix]
 timezone = "Europe/Berlin"
 default_room = "default" # per default new threads will be created in this room; uses the alias defined below
+default_sender = "main" # can be empty to disallow replies in certain rooms
 # mails from these addresses won't create a new thread
 head_blacklist = ["me@example.com", ".*@smtp.example.com"]
 
@@ -49,6 +62,11 @@ open_overview2 = "!someid7:matrix.org"
 open_all = [] # an empty array results in an overview of open threads from all channels
 open_overview1 = ["room2", "room3"]
 open_overview2 = ["de"]
+
+[matrix.sender]
+# map senders to rooms
+main = ["room2"]
+other = ["de", "room3"]
 
 [llm]
 # if you prefer to not use an llm, set

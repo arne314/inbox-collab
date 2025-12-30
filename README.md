@@ -10,17 +10,18 @@ is optionally stripped using a large language model.
 ## Features
 - Control via `!commands` in Matrix
 - Overview of all open Matrix threads in specific (configured) channels
+- Reply to mails via smtp
 - Extensive thread sorting configuration
 - Handling of forwarded and replied-to messages
 - Use LLM from either Ollama or an OpenAI compatible endpoint
 - Operation without an LLM possible; Redundant reply parts will (mostly) still be stripped
-- Planned: Reply to mails via smtp
 
 ## Usage
 - `!help` for command overview
 - `!open`, `!close`, `!forceclose` threads (`!forceclose` won't reopen on mail reply)
 - `!move <room substring>` to move a thread into another channel
 - `!resendoverview` and `!resendoverviewall` to recreate overview messages
+- `!reply` and `!send` replies using a configurable smtp server
 
 ## Installation
 1. Clone the repository
