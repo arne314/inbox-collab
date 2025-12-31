@@ -13,10 +13,13 @@ import (
 
 var (
 	nameFromRegex = regexp.MustCompile(
-		`(?i)\"?\s*([^<>\" ][^<>\"]+[^<>\" ])\"?\s*<`)
+		`(?i)\"?\s*([^<>\"]+[^<>\"\s])\"?\s*<.+@.+\..+>`)
+	nameFromRegexNoAngles = regexp.MustCompile(
+		`(?i)\"?\s*([^\"]+[^<>\"\s])\"?\s+.+@.+\..+`)
 	addressRegex = regexp.MustCompile(
 		`(?i)<?(([a-zA-Z0-9%+-][a-zA-Z0-9.+-_{}\(\)\[\]'"\\#\$%\^\?/=&!\*\|~]*)@([a-zA-Z0-9.-]+\.[a-zA-Z]{2,}))>?`)
-	idRegex = regexp.MustCompile(`(?i)<([^@ ]+@[^@ ]+)>`)
+	idRegex         = regexp.MustCompile(`(?i)<([^@ ]+@[^@ ]+)>`)
+	whitespaceRegex = regexp.MustCompile(`\s+`)
 )
 
 func parseHeaderRegex(
@@ -50,9 +53,14 @@ func parseIds(header string, allowEmpty bool) []string {
 }
 
 func parseNameFrom(header string) string {
-	matches := nameFromRegex.FindStringSubmatch(header)
+	var matches []string
+	if strings.ContainsRune(header, '<') || strings.ContainsRune(header, '>') {
+		matches = nameFromRegex.FindStringSubmatch(header)
+	} else {
+		matches = nameFromRegexNoAngles.FindStringSubmatch(header)
+	}
 	if matches != nil {
-		return matches[1]
+		return whitespaceRegex.ReplaceAllString(matches[1], " ")
 	}
 	return ""
 }
