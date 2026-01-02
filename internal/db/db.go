@@ -89,6 +89,17 @@ func (dh *DbHandler) GetMailById(ctx context.Context, id int64) *db.GetMailRow {
 	return mail
 }
 
+func (dh *DbHandler) GetMailByMatrixId(ctx context.Context, matrixId string) *db.Mail {
+	ctx, cancel := defaultContext(ctx)
+	defer cancel()
+	mail, err := dh.queries.GetMailByMatrixId(ctx, pgtype.Text{Valid: true, String: matrixId})
+	if err != nil {
+		log.Errorf("Failed to fetch mail by matrix id %v: %v", matrixId, err)
+		return nil
+	}
+	return mail
+}
+
 type getMailsQuery func(ctx context.Context) ([]*db.Mail, error)
 
 func getMails(ctx context.Context, query getMailsQuery, mailTypeLogMsg string) []*db.Mail {
@@ -108,6 +119,16 @@ func (dh *DbHandler) GetMailsByThread(ctx context.Context, threadId int64) []*db
 		return dh.queries.GetMailsByThread(ctx, pgtype.Int8{Int64: threadId, Valid: true})
 	}
 	return getMails(ctx, get, fmt.Sprintf("in thread %v", threadId))
+}
+
+func (dh *DbHandler) GetMailsByMessageIds(ctx context.Context, messageIds []string) []*db.Mail {
+	if len(messageIds) == 0 {
+		return []*db.Mail{}
+	}
+	get := func(ctx context.Context) ([]*db.Mail, error) {
+		return dh.queries.GetMailsByMessageIds(ctx, messageIds)
+	}
+	return getMails(ctx, get, fmt.Sprintf("with message ids %v", messageIds))
 }
 
 func (dh *DbHandler) GetMailsRequiringMessageExtraction(ctx context.Context) []*db.Mail {

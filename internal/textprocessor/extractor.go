@@ -2,6 +2,7 @@ package textprocessor
 
 import (
 	"context"
+	"slices"
 	"strings"
 
 	model "github.com/arne314/inbox-collab/internal/db/generated"
@@ -23,9 +24,12 @@ type MessageExtractor struct {
 func NewMessageExtractor(apiUrl string, mail model.Mail, threadHistory []*model.Mail) *MessageExtractor {
 	// mail is not a pointer as we want to modify its content
 	var llm LLM
-	if apiUrl == "passthrough" {
+	switch apiUrl {
+	case "passthrough":
 		llm = &LLMPassthrough{}
-	} else {
+	case "passthrough_test":
+		llm = &LLMPassthroughTest{}
+	default:
 		llm = &LLMPython{apiUrl: apiUrl}
 	}
 	body := strings.Clone(*mail.Body)
@@ -53,9 +57,6 @@ func (me *MessageExtractor) ExtractMessages(ctx context.Context) *db.ExtractedMe
 
 	// send through llm
 	me.extractLLM(ctx)
-	if me.result == nil {
-		return nil
-	}
 
 	// fixup
 	me.postExtraction()
@@ -94,8 +95,31 @@ func (me *MessageExtractor) extractLLM(ctx context.Context) {
 	me.result = me.llm.ExtractMessages(ctx, me.mail)
 }
 
-// fix potential llm extraction issues
+// fix potential llm extraction issues and process placeholders
 func (me *MessageExtractor) postExtraction() {
+	if me.result == nil {
+		return
+	}
+
+	// we might need to restore a message (though restoring more than one is not implemented)
+	if me.result.Forwarded {
+	iterresult:
+		for _, ext := range me.result.Messages {
+			if me.llm.IsPlaceholder(*ext.Content) {
+				for mail, removed := range me.messageRemoved {
+					if removed && mail.Messages != nil {
+						ext.Content = mail.Messages.Messages[0].Content
+						break iterresult
+					}
+				}
+			}
+		}
+	}
+	// placeholders can be ignored from now on
+	me.result.Messages = slices.DeleteFunc(me.result.Messages, func(m *db.Message) bool {
+		return me.llm.IsPlaceholder(*m.Content)
+	})
+
 	// detect new and known messsages
 	messageKnown := make(map[*db.Message]bool)
 	oldMessageKnown := make(map[*model.Mail]bool)
@@ -118,19 +142,15 @@ detectKnown:
 	}
 
 	// make sure the first message is new
-	if messageKnown[me.result.Messages[0]] {
-		if knownCount != len(me.result.Messages) {
-			for _, ext := range me.result.Messages {
-				// swap first with an unknown message
-				if !messageKnown[ext] {
-					tmp := me.result.Messages[0].Content
-					tmp2 := me.result.Messages[0].Author
-					me.result.Messages[0].Content = ext.Content
-					me.result.Messages[0].Author = ext.Author
-					ext.Content = tmp
-					ext.Author = tmp2
-					break
-				}
+	if messageKnown[me.result.Messages[0]] && knownCount != len(me.result.Messages) {
+		for i, ext := range me.result.Messages {
+			// move unknown message to the front
+			if !messageKnown[ext] {
+				me.result.Messages = append(
+					[]*db.Message{ext},
+					append(me.result.Messages[:i], me.result.Messages[i+1:]...)...,
+				)
+				break
 			}
 		}
 	}

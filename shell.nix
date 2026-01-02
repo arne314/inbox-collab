@@ -16,7 +16,8 @@ pkgs.mkShell {
   ];
 
   shellHook = ''
-    uv sync
+    # setup python env
+    uv sync --locked
     source .venv/bin/activate
   '';
 }

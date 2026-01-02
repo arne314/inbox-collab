@@ -10,16 +10,18 @@ is optionally stripped using a large language model.
 ## Features
 - Control via `!commands` in Matrix
 - Overview of all open Matrix threads in specific (configured) channels
+- Reply to mails via smtp
 - Extensive thread sorting configuration
 - Handling of forwarded and replied-to messages
 - Use LLM from either Ollama or an OpenAI compatible endpoint
 - Operation without an LLM possible; Redundant reply parts will (mostly) still be stripped
-- Planned: Reply to mails via smtp
 
 ## Usage
+- `!help` for command overview
 - `!open`, `!close`, `!forceclose` threads (`!forceclose` won't reopen on mail reply)
-- `!move <channel substring>` to move a thread into another channel
+- `!move <room substring>` to move a thread into another channel
 - `!resendoverview` and `!resendoverviewall` to recreate overview messages
+- `!reply` and `!send` replies using a configurable smtp server
 
 ## Installation
 1. Clone the repository
@@ -32,7 +34,7 @@ is optionally stripped using a large language model.
 ## Development
 1. Enter nix shell with `nix-shell`
 2. Run main go app with `go run ./cmd/main.go`
-3. Run llm python app with `uv run fastapi dev`
+3. Run llm python app with `uv run fastapi dev` and setup tracing backend with `uv run arize-phoenix serve`
 4. Run database with `docker compose run -p 5432:5432 db`
 5. Test go with `go test ./...`
 6. Generate sqlc files with `sqlc generate`

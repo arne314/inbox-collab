@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"maps"
 	"slices"
 	"sync"
 	"time"
@@ -13,10 +14,30 @@ import (
 )
 
 func (ic *InboxCollab) performMessageExtraction(ctx context.Context, mail *model.Mail) bool {
-	history := ic.dbHandler.GetMailsByThread(ctx, mail.Thread.Int64)
+	// collect all possibly cited messages
+	history_map := make(map[string]*model.Mail)
+	if mail.Thread.Valid {
+		for _, m := range ic.dbHandler.GetMailsByThread(ctx, mail.Thread.Int64) {
+			history_map[m.HeaderID] = m
+		}
+	}
+	referenced := ic.dbHandler.GetMailsByMessageIds(ctx, mail.HeaderReferences)
+	if mail.HeaderInReplyTo != "" {
+		referenced = append(referenced, ic.dbHandler.GetMailsByMessageIds(ctx, []string{mail.HeaderInReplyTo})...)
+	}
+	for _, m := range referenced {
+		if _, ok := history_map[m.HeaderID]; !ok {
+			history_map[m.HeaderID] = m
+		}
+	}
+	history := slices.SortedFunc(maps.Values(history_map), func(m1, m2 *model.Mail) int {
+		return m1.Timestamp.Time.Compare(m2.Timestamp.Time)
+	})
 	history = slices.DeleteFunc(history, func(m *model.Mail) bool {
 		return m.ID == mail.ID || m.Timestamp.Time.After(mail.Timestamp.Time)
 	})
+
+	// create and call extractor
 	extractor := textprocessor.NewMessageExtractor(ic.Config.LLM.ApiUrl, *mail, history)
 	extracted := extractor.ExtractMessages(ctx)
 	if extracted == nil || extracted.Messages == nil {
@@ -35,7 +56,7 @@ func (ic *InboxCollab) setupMessageExtractionStage() {
 		mails := ic.dbHandler.GetMailsRequiringMessageExtraction(ctx)
 		if len(mails) == 0 {
 			if MessageExtractionStage.IsFirstWork {
-				ThreadSortingStage.QueueWork()
+				MatrixNotificationStage.QueueWork()
 			}
 			return true
 		}

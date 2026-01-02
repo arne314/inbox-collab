@@ -2,6 +2,9 @@ package matrix
 
 import (
 	"fmt"
+	"html"
+	"net/url"
+	"regexp"
 	"strings"
 	"time"
 )
@@ -52,12 +55,20 @@ func (t *TextHtmlBuilder) Html() string {
 	return t.htmlBuilder.String()
 }
 
+func wrapHtmlTag(s, tag string) string {
+	return fmt.Sprintf("<%s>%s</%s>", tag, s, tag)
+}
+
 func wrapHtmlStrong(s string) string {
-	return fmt.Sprintf("<strong>%s</strong>", s)
+	return wrapHtmlTag(s, "strong")
 }
 
 func wrapHtmlItalic(s string) string {
-	return fmt.Sprintf("<i>%s</i>", s)
+	return wrapHtmlTag(s, "i")
+}
+
+func wrapHtmlCode(s string) string {
+	return wrapHtmlTag(s, "code")
 }
 
 func formatAttribute(name string, value string) (string, string) {
@@ -74,8 +85,20 @@ func formatItalic(message string) (string, string) {
 	return message, wrapHtmlItalic(message)
 }
 
+func formatCode(message string) (string, string) {
+	return message, wrapHtmlCode(message)
+}
+
+var mdCodeRegex *regexp.Regexp = regexp.MustCompile("`([^`]+)`")
+
+// replace `code` with html code tags
+func convertMdCode(message string) (string, string) {
+	return mdCodeRegex.ReplaceAllString(message, "$1"),
+		mdCodeRegex.ReplaceAllString(formatHtml(message), wrapHtmlCode("$1"))
+}
+
 func formatHtml(text string) string {
-	return strings.ReplaceAll(text, "\n", "<br>")
+	return strings.ReplaceAll(html.EscapeString(text), "\n", "<br>")
 }
 
 func formatTime(timestamp time.Time, timezone string) string {
@@ -96,6 +119,10 @@ func formatTime(timestamp time.Time, timezone string) string {
 }
 
 func formatMessageLink(roomId, messageId, homeServer string) string {
+	parsedUrl, err := url.Parse(homeServer)
+	if err == nil {
+		homeServer = parsedUrl.Host + parsedUrl.RequestURI()
+	}
 	return fmt.Sprintf(
 		"https://matrix.to/#/%s/%s?via=%s",
 		roomId, messageId, homeServer,

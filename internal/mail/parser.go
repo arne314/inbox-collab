@@ -11,7 +11,18 @@ import (
 	log "github.com/sirupsen/logrus"
 )
 
-func (mf *MailFetcher) parseHeaderRegex(
+var (
+	nameFromRegex = regexp.MustCompile(
+		`(?i)\"?\s*([^<>\"]+[^<>\"\s])\"?\s*<.+@.+\..+>`)
+	nameFromRegexNoAngles = regexp.MustCompile(
+		`(?i)\"?\s*([^\"]+[^<>\"\s])\"?\s+.+@.+\..+`)
+	addressRegex = regexp.MustCompile(
+		`(?i)<?(([a-zA-Z0-9%+-][a-zA-Z0-9.+-_{}\(\)\[\]'"\\#\$%\^\?/=&!\*\|~]*)@([a-zA-Z0-9.-]+\.[a-zA-Z]{2,}))>?`)
+	idRegex         = regexp.MustCompile(`(?i)<([^@ ]+@[^@ ]+)>`)
+	whitespaceRegex = regexp.MustCompile(`\s+`)
+)
+
+func parseHeaderRegex(
 	regex *regexp.Regexp,
 	header string,
 	allowEmpty bool,
@@ -33,18 +44,31 @@ func (mf *MailFetcher) parseHeaderRegex(
 	return slices.Compact(matches)
 }
 
-func (mf *MailFetcher) parseAddresses(header string, allowEmpty bool) []string {
-	return mf.parseHeaderRegex(mf.addressRegex, header, allowEmpty, true)
+func parseAddresses(header string, allowEmpty bool) []string {
+	return parseHeaderRegex(addressRegex, header, allowEmpty, true)
 }
 
-func (mf *MailFetcher) parseIds(header string, allowEmpty bool) []string {
-	return mf.parseHeaderRegex(mf.idRegex, header, allowEmpty, false)
+func parseIds(header string, allowEmpty bool) []string {
+	return parseHeaderRegex(idRegex, header, allowEmpty, false)
 }
 
-func (mf *MailFetcher) parseNameFrom(header string) string {
-	matches := mf.nameFromRegex.FindStringSubmatch(header)
+func parseNameFrom(header string) string {
+	var matches []string
+	if strings.ContainsRune(header, '<') || strings.ContainsRune(header, '>') {
+		matches = nameFromRegex.FindStringSubmatch(header)
+	} else {
+		matches = nameFromRegexNoAngles.FindStringSubmatch(header)
+	}
 	if matches != nil {
-		return matches[1]
+		return whitespaceRegex.ReplaceAllString(matches[1], " ")
+	}
+	return ""
+}
+
+func parseDomain(header string) string {
+	matches := addressRegex.FindStringSubmatch(header)
+	if matches != nil {
+		return matches[3]
 	}
 	return ""
 }
@@ -84,14 +108,14 @@ func (mf *MailFetcher) parseMessage(msg *imapclient.FetchMessageData) *Mail {
 	}
 	parsedMail := &Mail{
 		Fetcher:     mf.name,
-		MessageId:   mf.parseIds(envelope.GetHeader("Message-ID"), false)[0],
-		InReplyTo:   mf.parseIds(envelope.GetHeader("In-Reply-To"), false)[0],
-		References:  mf.parseIds(envelope.GetHeader("References"), true),
-		NameFrom:    mf.parseNameFrom(envelope.GetHeader("From")),
-		AddrFrom:    mf.parseAddresses(envelope.GetHeader("From"), false)[0],
-		AddrTo:      mf.parseAddresses(envelope.GetHeader("To"), true),
+		MessageId:   parseIds(envelope.GetHeader("Message-ID"), false)[0],
+		InReplyTo:   parseIds(envelope.GetHeader("In-Reply-To"), false)[0],
+		References:  parseIds(envelope.GetHeader("References"), true),
+		NameFrom:    parseNameFrom(envelope.GetHeader("From")),
+		AddrFrom:    parseAddresses(envelope.GetHeader("From"), false)[0],
+		AddrTo:      parseAddresses(envelope.GetHeader("To"), true),
 		Subject:     envelope.GetHeader("Subject"),
-		Date:        date,
+		Date:        date.UTC(),
 		Text:        envelope.Text,
 		Attachments: attachments,
 	}

@@ -21,10 +21,21 @@ var (
 	roomAliases      map[string]string   // alias -> room
 	roomAliasesInv   map[string]string   // room -> alias
 	roomsOverviewInv map[string][]string // target -> overview rooms
+	roomSender       map[string]string   // room -> sender
 )
 
 type LLMConfig struct {
 	ApiUrl string `toml:"python_api"`
+}
+
+type MailSenderConfig struct {
+	Hostname string   `toml:"hostname"`
+	Port     int      `toml:"port"`
+	AddrFrom string   `toml:"addr_from"`
+	AddrCC   []string `toml:"addr_cc"`
+	AddrBCC  []string `toml:"addr_bcc"`
+	Username string
+	Password string
 }
 
 type MailSourceConfig struct {
@@ -37,16 +48,20 @@ type MailSourceConfig struct {
 
 type MailConfig struct {
 	MaxAge        int                          `toml:"max_age"`
+	Senders       map[string]*MailSenderConfig `toml:"senders"`
 	Sources       map[string]*MailSourceConfig `toml:"sources"`
+	Timezone      string                       `toml:"timezone"`
 	ListMailboxes bool
 }
 
 type MatrixConfig struct {
 	Aliases       map[string]string   `toml:"aliases"`
 	DefaultRoom   string              `toml:"default_room"`
+	DefaultSender string              `toml:"default_sender"`
 	RoomsAddrFrom map[string]string   `toml:"rooms_addr_from"`
 	RoomsAddrTo   map[string]string   `toml:"rooms_addr_to"`
 	RoomsMailbox  map[string]string   `toml:"rooms_mailbox"`
+	SenderRooms   map[string][]string `toml:"sender"`   // sender -> rooms
 	RoomsOverview map[string][]string `toml:"overview"` // overview room -> targets
 	HeadBlacklist []string            `toml:"head_blacklist"`
 	Timezone      string              `toml:"timezone"`
@@ -114,6 +129,14 @@ func (c *MatrixConfig) GetOverviewRooms(target string) []string {
 		return rooms
 	}
 	return []string{}
+}
+
+// Get sender configured for a room
+func (c *MatrixConfig) GetRoomSender(room string) string {
+	if sender, ok := roomSender[room]; ok {
+		return sender
+	}
+	return c.DefaultSender
 }
 
 func resolveRoomValue(room string) (res string) {
@@ -185,6 +208,16 @@ func (c *Config) Load() {
 			source.Mailboxes = []string{"INBOX"}
 		}
 	}
+	for name, sender := range c.Mail.Senders {
+		sender.Username = c.getenv(fmt.Sprintf("MAIL_SENDER_%s_USERNAME", strings.ToUpper(name)))
+		sender.Password = c.getenv(fmt.Sprintf("MAIL_SENDER_%s_PASSWORD", strings.ToUpper(name)))
+		if sender.Username == "" || sender.Password == "" {
+			log.Fatalf("Incomplete mail sender credentials provided for %v", name)
+		}
+		if sender.AddrFrom == "" {
+			log.Fatalf("Please set 'addr_from' for %v like 'Author name <mail@example.com>'", name)
+		}
+	}
 
 	// regex validation
 	c.Matrix.HeadBlacklistRegex = make([]*regexp.Regexp, len(c.Matrix.HeadBlacklist))
@@ -211,6 +244,10 @@ func (c *Config) Load() {
 	_, err = time.LoadLocation(c.Matrix.Timezone)
 	if err != nil {
 		log.Fatalf("Matrix format timezone is invalid: %v", err)
+	}
+	_, err = time.LoadLocation(c.Mail.Timezone)
+	if err != nil {
+		log.Fatalf("Mail send format timezone is invalid: %v", err)
 	}
 	c.Matrix.DefaultRoom = resolveRoomValue(c.Matrix.DefaultRoom)
 	c.Matrix.RoomsAddrFromRegex = make(map[*regexp.Regexp]string)
@@ -251,6 +288,27 @@ func (c *Config) Load() {
 	}
 	for target := range roomsOverviewInv {
 		roomsOverviewInv[target] = filterRooms(append(roomsOverviewInv[target], roomsWithFullOverview...))
+	}
+
+	// validate sender rooms and fill map
+	roomSender = make(map[string]string)
+	validateSenderName := func(name string) {
+		if _, ok := c.Mail.Senders[name]; !ok {
+			log.Fatalf("No mail sender named '%s' in the configuration", name)
+		}
+	}
+	if c.Matrix.DefaultSender != "" {
+		validateSenderName(c.Matrix.DefaultSender)
+	}
+	for sender, rooms := range c.Matrix.SenderRooms {
+		validateSenderName(sender)
+		for _, alias := range rooms {
+			room := resolveRoomValue(alias)
+			if _, ok := roomSender[room]; ok {
+				log.Fatalf("Room '%s' (%s) appears more than once in the matrix sender configuration", alias, room)
+			}
+			roomSender[room] = sender
+		}
 	}
 
 	delete(roomsOverview, "")
