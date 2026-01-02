@@ -468,7 +468,7 @@ func (mc *MatrixClient) getMessageThreadAndReply(roomId string, messageId string
 	case "m.replace":
 		ctx, cancel := mc.defaultContext()
 		defer cancel()
-		original, err := mc.client.GetEvent(ctx, id.RoomID(roomId), id.EventID(originalId))
+		original, err := mc.client.GetEvent(ctx, id.RoomID(roomId), id.EventID(messageId))
 		if err != nil {
 			log.Errorf("Error getting original event from matrix: %v", err)
 			return

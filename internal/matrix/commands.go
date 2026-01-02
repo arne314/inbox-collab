@@ -84,7 +84,7 @@ var (
 		},
 	}
 	// correctly handles cited commands
-	commandRegex          *regexp.Regexp = regexp.MustCompile(`(?s)(?:^|\n)\s*!\s*([a-zA-Z]+)\s*(.*)\s*$`)
+	commandRegex          *regexp.Regexp = regexp.MustCompile(`(?s)^\s*!\s*([a-zA-Z]+)\s*(.*)\s*$`)
 	argsRegex             *regexp.Regexp = regexp.MustCompile(`\S+`)
 	CommandStateReactions []string       = []string{"👀", "⏳", "✅", "❌"}
 	roomMutexes           map[string]*sync.Mutex
@@ -265,8 +265,23 @@ func NewCommandHandler(
 	return &CommandHandler{Actions: actions, client: client}
 }
 
+func ParseCommand(message string) (command string, arg string, args []string) {
+	nonCitedLines := slices.DeleteFunc(strings.Split(message, "\n"), func(line string) bool {
+		return strings.HasPrefix(strings.TrimSpace(line), ">")
+	})
+	message = strings.Join(nonCitedLines, "\n")
+	parsed := commandRegex.FindStringSubmatch(message)
+	if parsed == nil {
+		return
+	}
+	command = strings.ToLower(parsed[1])
+	arg = strings.TrimSpace(parsed[2])
+	args = argsRegex.FindAllString(arg, -1)
+	return
+}
+
 func (ch *CommandHandler) ProcessMessage(ctx context.Context, evt *event.Event) {
-	// parse command
+	// choose and parse correct body
 	var message string
 	edited := evt.Content.AsMessage().NewContent != nil
 	if edited {
@@ -274,16 +289,9 @@ func (ch *CommandHandler) ProcessMessage(ctx context.Context, evt *event.Event) 
 	} else {
 		message = evt.Content.AsMessage().Body
 	}
-	parsed := commandRegex.FindStringSubmatch(message)
-	if parsed == nil {
+	cmd, arg, args := ParseCommand(message)
+	if cmd == "" {
 		return
-	}
-	cmd := strings.ToLower(parsed[1])
-	arg := ""
-	args := []string{}
-	if len(parsed) > 2 {
-		arg = strings.TrimSpace(parsed[2])
-		args = argsRegex.FindAllString(parsed[2], -1)
 	}
 
 	// run command if available
