@@ -141,9 +141,9 @@ func (mh *MatrixHandler) UpdateThreadOverview(
 
 	for i := range nAuthors {
 		link := formatMessageLink(rooms[i], threadMsgs[i], mh.Config.HomeServer)
-		textTitle, htlmTitle := formatAttribute(authors[i], subjects[i])
+		textTitle, htmlTitle := formatAttribute(authors[i], subjects[i])
 		textLine := fmt.Sprintf("%s - %s", textTitle, link)
-		htmlLine := fmt.Sprintf("%s - %s", htlmTitle, link)
+		htmlLine := fmt.Sprintf("%s - %s", htmlTitle, link)
 
 		if builder.MaxLen()+len(htmlLine) > 10000 {
 			warning := fmt.Sprintf("%v additional threads are not listed here.", len(authors)-i)

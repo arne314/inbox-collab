@@ -149,7 +149,7 @@ func (ic *InboxCollab) MoveThread(ctx context.Context, roomId string, threadId s
 	roomIds := ic.Config.Matrix.AllTargetRooms()
 	for _, r := range ic.dbHandler.GetRooms(ctx, roomIds) {
 		if strings.Contains(strings.ToLower(r.Name.String), query) {
-			if targetRoom != "" { // allow excactly one match
+			if targetRoom != "" { // allow exactly one match
 				return false
 			}
 			targetRoom = r.ID

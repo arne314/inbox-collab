@@ -117,7 +117,7 @@ func (llm *LLMPython) ExtractMessages(ctx context.Context, mail *model.Mail) *db
 	}
 	encoded, err := json.Marshal(data)
 	if err != nil {
-		log.Errorf("Error enconding json: %v", err)
+		log.Errorf("Error encoding json: %v", err)
 		return nil
 	}
 	response, err := llm.apiRequest(ctx, "parse_messages", encoded)

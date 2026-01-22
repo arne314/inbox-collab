@@ -90,7 +90,7 @@ func (me *MessageExtractor) replaceOldMessages() {
 	}
 }
 
-// invoke exraction process of llm
+// invoke extraction process of llm
 func (me *MessageExtractor) extractLLM(ctx context.Context) {
 	me.result = me.llm.ExtractMessages(ctx, me.mail)
 }
@@ -120,7 +120,7 @@ func (me *MessageExtractor) postExtraction() {
 		return me.llm.IsPlaceholder(*m.Content)
 	})
 
-	// detect new and known messsages
+	// detect new and known messages
 	messageKnown := make(map[*db.Message]bool)
 	oldMessageKnown := make(map[*model.Mail]bool)
 	knownCount := 0
