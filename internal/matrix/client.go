@@ -255,13 +255,13 @@ func (mc *MatrixClient) GetRoomName(roomId string) (bool, string) {
 	return true, content.Name
 }
 
-func (mc *MatrixClient) SleepOnRateLimit(err error) {
+func SleepOnRateLimit(err error) {
 	if strings.Contains(err.Error(), "M_LIMIT_EXCEEDED") {
 		time.Sleep(time.Second * 5)
 	}
 }
 
-func (mc *MatrixClient) SendRoomMessage(roomId string, text string, html string) (bool, string) {
+func (mc *MatrixClient) SendRoomMessage(roomId string, text string, html string) (ok bool, eventId string, err error) {
 	ctx, cancel := mc.defaultContext()
 	defer cancel()
 	resp, err := mc.client.SendMessageEvent(
@@ -277,17 +277,17 @@ func (mc *MatrixClient) SendRoomMessage(roomId string, text string, html string)
 	)
 	if err != nil {
 		log.Errorf("Error sending message to matrix: %v", err)
-		mc.SleepOnRateLimit(err)
-		return false, ""
+		SleepOnRateLimit(err)
 	}
-	return true, resp.EventID.String()
+	return true, resp.EventID.String(), nil
 }
 
 func (mc *MatrixClient) SendThreadMessage(
 	roomId string, threadId string, text string, html string, ignoreRedacted bool,
-) (bool, bool, string) {
+) (ok bool, redacted bool, eventId string, err error) {
 	if !ignoreRedacted && mc.MessageRedacted(roomId, threadId) {
-		return false, true, ""
+		redacted = true
+		return
 	}
 	ctx, cancel := mc.defaultContext()
 	defer cancel()
@@ -307,11 +307,11 @@ func (mc *MatrixClient) SendThreadMessage(
 		},
 	)
 	if err != nil {
-		log.Errorf("Error responding to thread on matrix: %v", err)
-		mc.SleepOnRateLimit(err)
-		return false, false, ""
+		log.Errorf("Error sending to thread on matrix: %v", err)
+		SleepOnRateLimit(err)
+		return
 	}
-	return true, false, resp.EventID.String()
+	return true, false, resp.EventID.String(), nil
 }
 
 func (mc *MatrixClient) RedactMessage(roomId, messageId string) bool {
@@ -320,7 +320,7 @@ func (mc *MatrixClient) RedactMessage(roomId, messageId string) bool {
 	_, err := mc.client.RedactEvent(ctx, id.RoomID(roomId), id.EventID(messageId))
 	if err != nil {
 		log.Errorf("Error redacting message event: %v", err)
-		mc.SleepOnRateLimit(err)
+		SleepOnRateLimit(err)
 		return false
 	}
 	return true
@@ -339,8 +339,7 @@ func (mc *MatrixClient) MessageRedacted(roomId string, messageId string) bool {
 
 func (mc *MatrixClient) EditRoomMessage(
 	roomId string, messageId string, text string, html string,
-) (bool, string) {
-	var err error
+) (ok bool, eventId string, err error) {
 	ctx, cancel := mc.defaultContext()
 	defer cancel()
 	if mc.MessageRedacted(roomId, messageId) {
@@ -370,15 +369,15 @@ func (mc *MatrixClient) EditRoomMessage(
 	if err != nil {
 		if strings.Contains(err.Error(), "M_TOO_LARGE") {
 			if !mc.RedactMessage(roomId, messageId) {
-				return false, ""
+				return
 			}
 			return mc.SendRoomMessage(roomId, text, html)
 		}
 		log.Errorf("Error updating message on matrix: %v", err)
-		mc.SleepOnRateLimit(err)
-		return false, ""
+		SleepOnRateLimit(err)
+		return
 	}
-	return true, messageId
+	return true, messageId, nil
 }
 
 func (mc *MatrixClient) GetOwnReactions(roomId string, messageId string) map[string]string {

@@ -9,6 +9,11 @@ import (
 	"time"
 )
 
+const (
+	textNewline = "\n"
+	htmlNewline = "<br>"
+)
+
 type TextHtmlBuilder struct {
 	textBuilder *strings.Builder
 	htmlBuilder *strings.Builder
@@ -32,7 +37,7 @@ func (t *TextHtmlBuilder) WriteLine(text, html string) {
 }
 
 func (t *TextHtmlBuilder) NewLine() {
-	t.Write("\n", "<br>")
+	t.Write(textNewline, htmlNewline)
 }
 
 func (t *TextHtmlBuilder) Len() (int, int) {
@@ -98,7 +103,7 @@ func convertMdCode(message string) (string, string) {
 }
 
 func formatHtml(text string) string {
-	return strings.ReplaceAll(html.EscapeString(text), "\n", "<br>")
+	return strings.ReplaceAll(html.EscapeString(text), textNewline, htmlNewline)
 }
 
 func formatTime(timestamp time.Time, timezone string) string {
@@ -127,4 +132,23 @@ func formatMessageLink(roomId, messageId, homeServer string) string {
 		"https://matrix.to/#/%s/%s?via=%s",
 		roomId, messageId, homeServer,
 	)
+}
+
+func truncateString(s string) string {
+	runes := []rune(s)
+	return string(runes[:len(runes)-max(1, len(runes)/10)])
+}
+
+func truncateChars(text, html string) (string, string) {
+	return truncateString(text), truncateString(html)
+}
+
+func truncateSplits(s string, split string) string {
+	lines := strings.Split(s, split)
+	lines = lines[:len(lines)-max(1, len(lines)/10)]
+	return strings.Join(lines, split)
+}
+
+func truncateLines(text, html string) (string, string) {
+	return truncateSplits(text, textNewline), truncateSplits(html, htmlNewline)
 }

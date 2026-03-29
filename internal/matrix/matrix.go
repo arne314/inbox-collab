@@ -72,6 +72,19 @@ func (mh *MatrixHandler) determineMatrixRoom(
 	return mh.Config.DefaultRoom
 }
 
+func truncateLarge(text string, html string, send func(string, string) (bool, string, error), truncate func(string, string) (string, string)) (ok bool, eventId string, err error) {
+	const warning = "⚠️ Warning: This message has been truncated"
+	ok, eventId, err = send(text, html)
+	for {
+		if err != nil && strings.Contains(err.Error(), "M_TOO_LARGE") {
+			text, html = truncate(text, html)
+		} else {
+			return
+		}
+		ok, eventId, err = send(fmt.Sprintf("%s...\n\n%s", text, warning), fmt.Sprintf("%s...<br><br>%s", html, warning))
+	}
+}
+
 func (mh *MatrixHandler) CreateThread(
 	fetcher string, addrFrom string, addrTo []string, author string, subject string, roomId string,
 ) (bool, string, string) {
@@ -79,14 +92,16 @@ func (mh *MatrixHandler) CreateThread(
 	if roomId == "" { // if moved room is already set
 		roomId = mh.determineMatrixRoom(fetcher, addrFrom, addrTo)
 	}
-	ok, messageId := mh.client.SendRoomMessage(roomId, textMessage, htmlMessage)
+	ok, messageId, _ := truncateLarge(textMessage, htmlMessage, func(text, html string) (bool, string, error) {
+		return mh.client.SendRoomMessage(roomId, textMessage, htmlMessage)
+	}, truncateChars)
 	return ok, roomId, messageId
 }
 
 func (mh *MatrixHandler) AddReply(
 	roomId string, threadId string, author string, subject string,
 	timestamp time.Time, attachments []string, conversation model.ExtractedMessages, isFirst bool,
-) (bool, bool, string) {
+) (ok bool, redacted bool, matrixId string) {
 	builder := NewTextHtmlBuilder()
 	hasHead := false
 	if !isFirst {
@@ -128,13 +143,17 @@ func (mh *MatrixHandler) AddReply(
 			builder.Write(formatItalic("Empty message"))
 		}
 	}
-	return mh.client.SendThreadMessage(roomId, threadId, builder.Text(), builder.Html(), false)
+	ok, matrixId, _ = truncateLarge(builder.Text(), builder.Html(), func(text, html string) (ok bool, eventId string, err error) {
+		ok, redacted, eventId, err = mh.client.SendThreadMessage(roomId, threadId, text, html, false)
+		return
+	}, truncateLines)
+	return
 }
 
 func (mh *MatrixHandler) UpdateThreadOverview(
 	overviewRoomId string, overviewMessageId string, authors []string,
 	subjects []string, rooms []string, threadMsgs []string,
-) (bool, string) {
+) (ok bool, matrixId string) {
 	builder := NewTextHtmlBuilder()
 	builder.WriteLine("Overview", "<h2>Overview</h2>")
 	nAuthors := len(authors)
@@ -160,9 +179,15 @@ func (mh *MatrixHandler) UpdateThreadOverview(
 
 	textMessage, htmlMessage := builder.String()
 	if overviewMessageId == "" {
-		return mh.client.SendRoomMessage(overviewRoomId, textMessage, htmlMessage)
+		ok, matrixId, _ = truncateLarge(textMessage, htmlMessage, func(text, html string) (bool, string, error) {
+			return mh.client.SendRoomMessage(overviewRoomId, text, html)
+		}, truncateLines)
+		return
 	} else {
-		return mh.client.EditRoomMessage(overviewRoomId, overviewMessageId, textMessage, htmlMessage)
+		ok, matrixId, _ = truncateLarge(textMessage, htmlMessage, func(text, html string) (bool, string, error) {
+			return mh.client.EditRoomMessage(overviewRoomId, overviewMessageId, text, html)
+		}, truncateLines)
+		return
 	}
 }
 
@@ -176,13 +201,13 @@ func (mh *MatrixHandler) linkOtherThread(roomId, threadId, linkRoomId, linkMessa
 	builder := NewTextHtmlBuilder()
 	link := formatMessageLink(linkRoomId, linkMessageId, mh.Config.HomeServer)
 	builder.Write(formatAttribute(noteTitle, fmt.Sprintf("%v %v", note, link)))
-	ok, _, _ := mh.client.SendThreadMessage(roomId, threadId, builder.Text(), builder.Html(), true)
+	ok, _, _, _ := mh.client.SendThreadMessage(roomId, threadId, builder.Text(), builder.Html(), true)
 	return ok
 }
 
 func (mh *MatrixHandler) NotifyRecreation(roomId, threadId, linkRoomId, linkMessageId string, intentionalMove bool) bool {
 	var note string
-	noteTitle := "⚠️ Warning"
+	const noteTitle = "⚠️ Warning"
 	if intentionalMove {
 		note = "This thread has been moved to"
 	} else {
