@@ -62,6 +62,7 @@ func (ic *InboxCollab) setupMessageExtractionStage() {
 		}
 		log.Infof("Extracting messages from %v mails...", len(mails))
 		wg.Add(len(mails))
+
 		// extract messages in batches per thread (mails are ordered by thread, timestamp)
 		extractBatch := func(b []*model.Mail) {
 			success := true
@@ -80,7 +81,9 @@ func (ic *InboxCollab) setupMessageExtractionStage() {
 		var prevThread int64 = -1
 		for _, mail := range mails {
 			if len(batch) > 0 && mail.Thread.Int64 != int64(prevThread) {
-				go extractBatch(batch)
+				batchCopy := make([]*model.Mail, len(batch))
+				copy(batchCopy, batch)
+				go extractBatch(batchCopy)
 				batch = make([]*model.Mail, 0, len(batch))
 			}
 			batch = append(batch, mail)
