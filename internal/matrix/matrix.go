@@ -99,7 +99,7 @@ func (mh *MatrixHandler) CreateThread(
 }
 
 func (mh *MatrixHandler) AddReply(
-	roomId string, threadId string, author string, subject string,
+	roomId string, threadId string, author string, authorAddr string, subject string,
 	timestamp time.Time, attachments []string, conversation model.ExtractedMessages, isFirst bool,
 ) (ok bool, redacted bool, matrixId string) {
 	builder := NewTextHtmlBuilder()
@@ -117,6 +117,10 @@ func (mh *MatrixHandler) AddReply(
 	}
 	if len(attachments) != 0 {
 		builder.WriteLine(formatAttribute("Attachments", strings.Join(attachments, ", ")))
+		hasHead = true
+	}
+	if mh.Config.GetRoomSender(roomId) != "" {
+		builder.WriteLine(formatAttribute("Reply To", authorAddr))
 		hasHead = true
 	}
 	if hasHead {

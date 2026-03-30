@@ -87,7 +87,7 @@ func (ic *InboxCollab) setupMatrixNotificationsStage() {
 				continue
 			}
 			ok, redacted, matrixId := ic.matrixHandler.AddReply(
-				mail.RootMatrixRoomID.String, mail.RootMatrixID.String, mail.NameFrom,
+				mail.RootMatrixRoomID.String, mail.RootMatrixID.String, mail.NameFrom, mail.AddrFrom,
 				mail.Subject, mail.Timestamp.Time, mail.Attachments,
 				*mail.Messages, mail.IsFirst,
 			)
