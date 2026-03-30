@@ -142,7 +142,7 @@ detectKnown:
 	}
 
 	// make sure the first message is new
-	if messageKnown[me.result.Messages[0]] && knownCount != len(me.result.Messages) {
+	if len(me.result.Messages) != 0 && messageKnown[me.result.Messages[0]] && knownCount != len(me.result.Messages) {
 		for i, ext := range me.result.Messages {
 			// move unknown message to the front
 			if !messageKnown[ext] {
