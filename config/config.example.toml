@@ -22,6 +22,7 @@ addr_bcc = ["log@example.com", "log-backup@example.com"]
 hostname = "smtpother.example.com"
 port = 465
 addr_from = "My Name <name@example.com>"
+store = ["other::Sent Items", "main::Trash"] # store in imap source (mailbox part must not be listed in the source)
 
 [matrix]
 timezone = "Europe/Berlin"
@@ -74,7 +75,7 @@ other = ["de", "room3"]
 
 rate_limit = 0.05 # this is a relatively strict limit
 rate_limit_max_bucket = 5
-python_api = "http://localhost:8000"
+python_api = "http://app-llm:8000"
 max_concurrent_prompts = 2
 
 ollama_url = "http://localhost:11434"

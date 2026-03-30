@@ -207,7 +207,7 @@ func (ic *InboxCollab) ReplyToMailInThread(ctx context.Context, roomId string, o
 	if cite {
 		cited = *original.Body
 	}
-	err, newMail, message := sender.SendReplyMail(
+	newMail, message, raw, err := sender.SendReplyMail(
 		text, cited, original.Subject, original.Timestamp.Time, original.HeaderID, original.HeaderReferences,
 		original.NameFrom, original.AddrFrom,
 	)
@@ -215,23 +215,33 @@ func (ic *InboxCollab) ReplyToMailInThread(ctx context.Context, roomId string, o
 		return err
 	}
 
+	// store mail in imap mailboxes
+	var errorMessage string
+	if !ic.mailHandler.StoreSentMail(sender.Name, newMail, raw) {
+		errorMessage += "Failed to store mail in mailbox. "
+	}
+
 	// properly add mail to db
 	ic.dbHandler.AddMails(ctx, []*model.Mail{modelMailForDb(newMail)})
 	var newMailModel *model.Mail
 	if byId := ic.dbHandler.GetMailsByMessageIds(ctx, []string{newMail.MessageId}); len(byId) > 0 {
 		newMailModel = byId[0]
+		newMailModel.Messages = &modelcustom.ExtractedMessages{
+			Messages: []*modelcustom.Message{
+				{Author: newMailModel.NameFrom, Timestamp: &newMailModel.Timestamp.Time, Content: &message},
+			},
+		}
+		ic.dbHandler.UpdateExtractedMessages(ctx, newMailModel)
+		ic.dbHandler.AddMailToThread(ctx, newMailModel, original.Thread.Int64)
+		ic.dbHandler.UpdateMailMatrixId(ctx, newMailModel.ID, originalMessageId)
 	} else {
-		return fmt.Errorf("Database issue, try again later")
+		errorMessage += "Failed to store mail in database. "
 	}
-	newMailModel.Messages = &modelcustom.ExtractedMessages{
-		Messages: []*modelcustom.Message{
-			{Author: newMailModel.NameFrom, Timestamp: &newMailModel.Timestamp.Time, Content: &message},
-		},
-	}
-	ic.dbHandler.UpdateExtractedMessages(ctx, newMailModel)
-	ic.dbHandler.AddMailToThread(ctx, newMailModel, original.Thread.Int64)
-	ic.dbHandler.UpdateMailMatrixId(ctx, newMailModel.ID, originalMessageId)
+
 	ic.QueueMatrixOverviewUpdate([]string{roomId}, true)
+	if errorMessage != "" {
+		return fmt.Errorf("Reply was sent successfully but there was an issue processing it afterwards: %s", errorMessage)
+	}
 	return nil
 }
 

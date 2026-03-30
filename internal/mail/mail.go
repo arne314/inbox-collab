@@ -27,7 +27,7 @@ type Mail struct {
 
 func (m *Mail) String() string {
 	return fmt.Sprintf(
-		"Mail %v on %v from %v to %v with subject %v and attachments %v",
+		"Mail %v at %v from %v to %v with subject %v and attachments %v",
 		m.MessageId, m.Date, m.AddrFrom, m.AddrTo, m.Subject, m.Attachments,
 	)
 }
@@ -65,7 +65,7 @@ func (mh *MailHandler) Setup(
 			)
 			waitGroup.Add(1)
 			go func(f *MailFetcher) {
-				if !f.Setup() {
+				if !f.Setup(mh.Config.ListMailboxes) {
 					log.Fatalf("Unable to connect MailFetcher %v", f.name)
 				}
 				waitGroup.Done()
@@ -82,7 +82,12 @@ func (mh *MailHandler) Setup(
 		waitGroup.Add(1)
 		go func(s *MailSender) {
 			if !s.TestConnection() {
-				log.Fatalf("Unable to use MailSender %v", s.name)
+				log.Fatalf("Unable to use MailSender %v", s.Name)
+			}
+			for _, storer := range s.config.Storers {
+				if !mh.GetMailStorerFetcher(storer).TestConnection() {
+					log.Fatalf("Unable to use store configuration %s in MailSender %s", storer, s.Name)
+				}
 			}
 			waitGroup.Done()
 		}(sender)
@@ -94,6 +99,33 @@ func (mh *MailHandler) Setup(
 
 func (mh *MailHandler) GetMailSender(name string) *MailSender {
 	return mh.senders[name]
+}
+
+func (mh *MailHandler) GetMailStorerFetcher(storer config.Storer) (fetcher *MailFetcher) {
+	name := fmt.Sprintf("%s:%s:store", storer.Source, storer.Mailbox)
+	return NewMailFetcher(name, storer.Mailbox, mh.Config.Sources[storer.Source], mh.Config, mh, nil)
+}
+
+func (mh *MailHandler) StoreSentMail(sender string, mail *Mail, raw string) bool {
+	var waitGroup sync.WaitGroup
+	storers := mh.Config.Senders[sender].Storers
+	resultChan := make(chan bool, len(storers))
+
+	for _, storer := range storers {
+		waitGroup.Add(1)
+		go func(fetcher *MailFetcher) {
+			defer waitGroup.Done()
+			resultChan <- fetcher.Setup(true) && fetcher.StoreMail(mail, raw)
+		}(mh.GetMailStorerFetcher(storer))
+	}
+	waitGroup.Wait()
+	close(resultChan)
+	for ok := range resultChan {
+		if !ok {
+			return false
+		}
+	}
+	return true
 }
 
 func (mh *MailHandler) MailboxUpdated() {

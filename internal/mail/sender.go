@@ -15,7 +15,7 @@ import (
 )
 
 type MailSender struct {
-	name         string
+	Name         string
 	config       *config.MailSenderConfig
 	mailConfig   *config.MailConfig
 	authorAddr   string
@@ -36,7 +36,7 @@ func NewMailSender(name string, cfg *config.MailSenderConfig, mailConfig *config
 	server.KeepAlive = true
 	server.Encryption = simplemail.EncryptionSSLTLS
 	return &MailSender{
-		name: name, config: cfg, mailConfig: mailConfig, server: server,
+		Name: name, config: cfg, mailConfig: mailConfig, server: server,
 		authorAddr:   parseAddresses(cfg.AddrFrom, false)[0],
 		authorName:   parseNameFrom(cfg.AddrFrom),
 		authorDomain: parseDomain(cfg.AddrFrom),
@@ -45,7 +45,7 @@ func NewMailSender(name string, cfg *config.MailSenderConfig, mailConfig *config
 
 func (ms *MailSender) TestConnection() bool {
 	res := ms.login() && ms.logout()
-	log.Infof("MailSender %s working: %v", ms.name, res)
+	log.Infof("MailSender %s working: %v", ms.Name, res)
 	return res
 }
 
@@ -93,12 +93,13 @@ var replyStackRegex *regexp.Regexp = regexp.MustCompile(`(?i)^(Re:\s*)+`)
 // login and send mail via smtp
 func (ms *MailSender) SendReplyMail(reply string, cite string, originalSubject string,
 	originalTimestamp time.Time, originalId string, originalReferences []string, nameTo string, addrTo string,
-) (error, *Mail, string) {
+) (mail *Mail, replyMessage string, raw string, err error) {
 	// authentication
 	ms.sendMutex.Lock()
 	defer ms.sendMutex.Unlock()
 	if !ms.login() {
-		return fmt.Errorf("Failed to login to server"), nil, ""
+		err = fmt.Errorf("Failed to login")
+		return
 	}
 	defer ms.logout()
 
@@ -121,9 +122,10 @@ func (ms *MailSender) SendReplyMail(reply string, cite string, originalSubject s
 	} else {
 		content = reply
 	}
+	replyMessage = reply
 
-	// send smail
-	mail := &Mail{
+	// create mail
+	mail = &Mail{
 		MessageId:   ms.generateMessageId(content),
 		InReplyTo:   originalId,
 		References:  append(originalReferences, originalId),
@@ -136,23 +138,27 @@ func (ms *MailSender) SendReplyMail(reply string, cite string, originalSubject s
 		Attachments: []string{},
 	}
 	simplemailEmail := ms.createSimplemailEmail(mail).AddTo(addressee)
-
 	if simplemailEmail.Error != nil {
-		log.Errorf("MailSender %s failed to create a reply email: %v", ms.name, simplemailEmail.Error)
-		return fmt.Errorf("Failed to create mail"), nil, ""
+		log.Errorf("MailSender %s failed to create a reply email: %v", ms.Name, simplemailEmail.Error)
+		err = fmt.Errorf("Failed to create mail")
+		return
 	}
-	if err := simplemailEmail.Send(ms.client); err != nil {
-		log.Errorf("MailSender %s failed to reply to mail %s: %v", ms.name, originalId, err)
-		return fmt.Errorf("Failed to send mail"), nil, ""
+
+	// send mail
+	if err = simplemailEmail.Send(ms.client); err != nil {
+		log.Errorf("MailSender %s failed to reply to mail %s: %v", ms.Name, originalId, err)
+		err = fmt.Errorf("Failed to send mail")
+		return
 	}
-	log.Infof("MailSender %s successfully replied to mail %s", ms.name, originalId)
-	return nil, mail, reply
+	raw = simplemailEmail.GetMessage()
+	log.Infof("MailSender %s successfully replied to mail %s", ms.Name, originalId)
+	return
 }
 
 func (ms *MailSender) login() bool {
 	client, err := ms.server.Connect()
 	if err != nil {
-		log.Errorf("Error logging into MailSender %s: %v", ms.name, err)
+		log.Errorf("Error logging into MailSender %s: %v", ms.Name, err)
 		return false
 	}
 	ms.client = client
@@ -162,7 +168,7 @@ func (ms *MailSender) login() bool {
 func (ms *MailSender) logout() bool {
 	if ms.client != nil {
 		if err := ms.client.Close(); err != nil {
-			log.Warnf("Error closing smtp connection of MailSender %s: %v", ms.name, err)
+			log.Warnf("Error closing smtp connection of MailSender %s: %v", ms.Name, err)
 			return false
 		}
 		ms.client = nil

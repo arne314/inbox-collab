@@ -34,6 +34,8 @@ type MailSenderConfig struct {
 	AddrFrom string   `toml:"addr_from"`
 	AddrCC   []string `toml:"addr_cc"`
 	AddrBCC  []string `toml:"addr_bcc"`
+	Store    []string `toml:"store"`
+	Storers  []Storer
 	Username string
 	Password string
 }
@@ -75,6 +77,15 @@ type MatrixConfig struct {
 	Username      string
 	Password      string
 	VerifySession bool
+}
+
+type Storer struct {
+	Source  string
+	Mailbox string
+}
+
+func (s Storer) String() string {
+	return fmt.Sprintf("%s::%s", s.Source, s.Mailbox)
 }
 
 type Config struct {
@@ -311,6 +322,22 @@ func (c *Config) Load() {
 		}
 	}
 
+	// validate sender store and fill storers
+	for name, sender := range c.Mail.Senders {
+		sender.Storers = make([]Storer, len(sender.Store))
+		for i, store := range sender.Store {
+			split := strings.Split(store, "::")
+			if len(split) != 2 {
+				log.Fatalf("Store configuration option syntax '%s' for sender %s is invalid", store, name)
+			}
+			if c.Mail.Sources[split[0]] == nil {
+				log.Fatalf("Store configuration option '%s' for sender %s does not have a valid source", store, name)
+			}
+			sender.Storers[i] = Storer{Source: split[0], Mailbox: split[1]}
+		}
+	}
+
+	// cleanup
 	delete(roomsOverview, "")
 	c.Matrix.RoomsOverview = roomsOverview
 	allRooms = filterRooms(allRooms)

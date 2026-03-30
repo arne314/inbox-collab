@@ -72,7 +72,7 @@ func (mf *MailFetcher) fetchMessages() []*Mail {
 	searchCriteria := &imap.SearchCriteria{
 		SentSince: time.Now().UTC().AddDate(0, 0, -mf.globalConfig.MaxAge),
 	}
-	if ok, _ := mf.uidsValid(); ok {
+	if ok, _ := mf.uidsValid(false); ok {
 		uid := imap.UIDSet{}
 		uid.AddRange(imap.UID(mf.uidLast+1), 0) // 0 means no upper limit
 		searchCriteria.UID = []imap.UIDSet{uid}
@@ -85,7 +85,7 @@ func (mf *MailFetcher) fetchMessages() []*Mail {
 		UID:         true,
 		Flags:       true,
 		Envelope:    true,
-		BodySection: []*imap.FetchItemBodySection{{}},
+		BodySection: []*imap.FetchItemBodySection{{Peek: true}},
 	}
 
 	// search for mails
@@ -142,7 +142,6 @@ func (mf *MailFetcher) idle() bool {
 		return false
 	}
 	mf.idleCommand = cmd
-	log.Infof("MailFetcher %v is now in idle", mf.name)
 	mf.isIdle = true
 	return true
 }
@@ -161,7 +160,6 @@ func (mf *MailFetcher) revokeIdle() bool {
 			return false
 		}
 	}
-	log.Infof("MailFetcher %v stopped idle", mf.name)
 	return true
 }
 
@@ -195,7 +193,7 @@ func (mf *MailFetcher) reconnect() {
 			}
 		}
 		err := runWithHardTimeout(30*time.Second, func() error {
-			if !mf.login() {
+			if !mf.login(false) {
 				return fmt.Errorf("Error logging in MailFetcher %v", mf.name)
 			}
 			return nil
@@ -228,8 +226,8 @@ func (mf *MailFetcher) ensureConnected(activeValidation bool) {
 	}
 }
 
-func (mf *MailFetcher) Setup() bool {
-	loginSuccess := mf.login()
+func (mf *MailFetcher) Setup(temporary bool) bool {
+	loginSuccess := mf.login(temporary)
 	startConnectionWatcher := func(active bool, interval time.Duration) {
 		for {
 			select {
@@ -241,7 +239,7 @@ func (mf *MailFetcher) Setup() bool {
 		}
 	}
 	if loginSuccess {
-		if !mf.globalConfig.ListMailboxes {
+		if !temporary {
 			go startConnectionWatcher(false, time.Minute)
 			go startConnectionWatcher(true, 20*time.Minute)
 		}
@@ -250,10 +248,17 @@ func (mf *MailFetcher) Setup() bool {
 	return loginSuccess
 }
 
-func (mf *MailFetcher) login() bool {
+func (mf *MailFetcher) TestConnection() bool {
+	return mf.login(true) && mf.logout()
+}
+
+func (mf *MailFetcher) login(temporary bool) bool {
 	options := &imapclient.Options{
 		UnilateralDataHandler: &imapclient.UnilateralDataHandler{
 			Mailbox: func(data *imapclient.UnilateralDataMailbox) {
+				if temporary {
+					return
+				}
 				if mf.ctx.Err() != nil {
 					return
 				}
@@ -285,17 +290,19 @@ func (mf *MailFetcher) login() bool {
 		mf.listMailboxes()
 		return true
 	}
-	_, err = mf.uidsValid() // try to select inbox
+	_, err = mf.uidsValid(temporary) // try to select mailbox
 	if err != nil {
 		return false
 	}
-	mf.idle()
-	mf.saveState()
+	if !temporary {
+		mf.idle()
+		mf.saveState()
+	}
 	log.Infof("MailFetcher %v logged in successfully", mf.name)
 	return true
 }
 
-func (mf *MailFetcher) uidsValid() (bool, error) {
+func (mf *MailFetcher) uidsValid(temporary bool) (bool, error) {
 	mailbox, err := mf.client.Select(mf.mailbox, nil).Wait()
 	if err != nil {
 		log.Errorf("Failed to select inbox for %v: %v", mf.name, err)
@@ -304,7 +311,7 @@ func (mf *MailFetcher) uidsValid() (bool, error) {
 	if mf.uidValidity == mailbox.UIDValidity {
 		return true, nil
 	}
-	if mf.uidValidity != 0 {
+	if mf.uidValidity != 0 && !temporary {
 		log.Infof("UIDs for %v have been invalidated, all mails need to be refetched", mf.name)
 	}
 	mf.uidValidity = mailbox.UIDValidity
@@ -359,6 +366,28 @@ fetchloop:
 		}
 	}
 	mf.closed <- struct{}{}
+}
+
+func (mf *MailFetcher) StoreMail(mail *Mail, raw string) (ok bool) {
+	buf := []byte(raw)
+	appendCmd := mf.client.Append(mf.mailbox, int64(len(buf)), &imap.AppendOptions{
+		Flags: []imap.Flag{imap.FlagSeen},
+		Time:  mail.Date.UTC(),
+	})
+	if _, err := appendCmd.Write(buf); err != nil {
+		log.Errorf("Error writing message to mailbox %s with MailFetcher %s: %v", mf.mailbox, mf.name, err)
+		return
+	}
+	if err := appendCmd.Close(); err != nil {
+		log.Errorf("Error closing message in mailbox %s with MailFetcher %s: %v", mf.mailbox, mf.name, err)
+		return
+	}
+	if _, err := appendCmd.Wait(); err != nil {
+		log.Errorf("Error storing mail in mailbox %s with MailFetcher %s: %v", mf.mailbox, mf.name, err)
+		return
+	}
+	log.Infof("MailFetcher %s successfully stored mail %v in mailbox %s", mf.name, mail, mf.mailbox)
+	return true
 }
 
 func (mf *MailFetcher) logout() bool {
