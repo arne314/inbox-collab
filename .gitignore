@@ -1,5 +1,7 @@
 .env
 /config/config.toml
 /data
+/main
 __pycache__
+result
 
