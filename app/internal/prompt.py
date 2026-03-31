@@ -58,9 +58,11 @@ class ResponseSchema(BaseModel):
 
         # put most recent message first
         messages.sort(
-            key=lambda m: datetime.fromisoformat(m.timestamp)
-            if m.timestamp is not None
-            else datetime.fromtimestamp(0),
+            key=lambda m: (
+                datetime.fromisoformat(m.timestamp)
+                if m.timestamp is not None
+                else datetime.fromtimestamp(0)
+            ),
             reverse=True,
         )
         # make sure the first message is not a placeholder

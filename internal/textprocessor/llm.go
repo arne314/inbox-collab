@@ -101,7 +101,7 @@ func (llm *LLMPython) apiRequest(ctx context.Context, endpoint string, body []by
 		return nil, err
 	}
 	if code := resp.StatusCode; code != 200 {
-		return nil, fmt.Errorf("Received http status %v from llm api: %v", code, string(data))
+		return nil, fmt.Errorf("received http status %v from llm api: %v", code, string(data))
 	}
 	return data, nil
 }

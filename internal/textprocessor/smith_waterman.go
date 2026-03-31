@@ -84,9 +84,9 @@ func smithWaterman(base *message, block *message) (similarity float32, start int
 
 	// traceback
 	i, j := bestI, bestJ
-	prevI, prevJ := i, j
+	prevI := i
 	for i >= 0 && j >= 0 && trace[i][j] != stop {
-		prevI, prevJ = i, j
+		prevI = i
 		switch trace[i][j] {
 		case diagonal:
 			i--
@@ -97,6 +97,6 @@ func smithWaterman(base *message, block *message) (similarity float32, start int
 			j--
 		}
 	}
-	i, j = prevI, prevJ
+	i = prevI
 	return score[bestI][bestJ] / float32(m), base.chunks[i].start, base.chunks[bestI].end
 }

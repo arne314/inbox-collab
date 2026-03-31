@@ -19,7 +19,6 @@ import (
 
 type DbHandler struct {
 	Config  *config.Config
-	ctx     context.Context
 	pool    *pgxpool.Pool
 	queries *db.Queries
 }

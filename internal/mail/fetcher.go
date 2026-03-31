@@ -194,7 +194,7 @@ func (mf *MailFetcher) reconnect() {
 		}
 		err := runWithHardTimeout(30*time.Second, func() error {
 			if !mf.login(false) {
-				return fmt.Errorf("Error logging in MailFetcher %v", mf.name)
+				return fmt.Errorf("error logging in MailFetcher %v", mf.name)
 			}
 			return nil
 		})

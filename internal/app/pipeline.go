@@ -9,6 +9,10 @@ import (
 	log "github.com/sirupsen/logrus"
 )
 
+type contextKey string
+
+const retryKey contextKey = "retry"
+
 type PipelineStage struct {
 	name            string
 	setup           func(context.Context)
@@ -80,7 +84,7 @@ func (s *PipelineStage) Run(waitGroup *sync.WaitGroup) {
 		first := true
 		retry := false
 		for first || retry {
-			ctx := context.WithValue(s.ctx, "retry", retry)
+			ctx := context.WithValue(s.ctx, retryKey, retry)
 			first = false
 			retry = !s.work(ctx) && ctx.Err() == nil
 		}

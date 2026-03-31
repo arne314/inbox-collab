@@ -190,14 +190,14 @@ func (ic *InboxCollab) MoveThread(ctx context.Context, roomId string, threadId s
 func (ic *InboxCollab) ReplyToMailInThread(ctx context.Context, roomId string, originalMessageId string, replyToId string, text string, cite bool) error {
 	sender := ic.mailHandler.GetMailSender(ic.Config.Matrix.GetRoomSender(roomId))
 	if sender == nil {
-		return fmt.Errorf("No sender configured for this room")
+		return fmt.Errorf("no sender is configured for this room")
 	}
 	if existing := ic.dbHandler.GetMailByMatrixId(ctx, originalMessageId); existing != nil {
-		return fmt.Errorf("Your edit has been ignored as this reply had already been sent. Send a new message to add another reply.")
+		return fmt.Errorf("your edit has been ignored as this reply had already been sent. Send a new message to add another reply")
 	}
 	original := ic.dbHandler.GetMailByMatrixId(ctx, replyToId)
 	if original == nil {
-		return fmt.Errorf("This is not a valid mail to reply to. Choose one by directly replying to it on matrix.")
+		return fmt.Errorf("this is not a valid mail to reply to. Choose one by directly replying to it on matrix")
 	}
 
 	// send mail
@@ -240,7 +240,7 @@ func (ic *InboxCollab) ReplyToMailInThread(ctx context.Context, roomId string, o
 
 	ic.QueueMatrixOverviewUpdate([]string{roomId}, true)
 	if errorMessage != "" {
-		return fmt.Errorf("Reply was sent successfully but there was an issue processing it afterwards: %s", errorMessage)
+		return fmt.Errorf("reply was sent successfully but there was an issue processing it afterwards: %s", errorMessage)
 	}
 	return nil
 }

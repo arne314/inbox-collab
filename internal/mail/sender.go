@@ -98,7 +98,7 @@ func (ms *MailSender) SendReplyMail(reply string, cite string, originalSubject s
 	ms.sendMutex.Lock()
 	defer ms.sendMutex.Unlock()
 	if !ms.login() {
-		err = fmt.Errorf("Failed to login")
+		err = fmt.Errorf("failed to login")
 		return
 	}
 	defer ms.logout()
@@ -140,14 +140,14 @@ func (ms *MailSender) SendReplyMail(reply string, cite string, originalSubject s
 	simplemailEmail := ms.createSimplemailEmail(mail).AddTo(addressee)
 	if simplemailEmail.Error != nil {
 		log.Errorf("MailSender %s failed to create a reply email: %v", ms.Name, simplemailEmail.Error)
-		err = fmt.Errorf("Failed to create mail")
+		err = fmt.Errorf("failed to generate mail")
 		return
 	}
 
 	// send mail
 	if err = simplemailEmail.Send(ms.client); err != nil {
 		log.Errorf("MailSender %s failed to reply to mail %s: %v", ms.Name, originalId, err)
-		err = fmt.Errorf("Failed to send mail")
+		err = fmt.Errorf("failed to send mail")
 		return
 	}
 	raw = simplemailEmail.GetMessage()

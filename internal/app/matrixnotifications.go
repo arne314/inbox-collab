@@ -38,7 +38,7 @@ func (ic *InboxCollab) setupMatrixNotificationsStage() {
 		if ic.Config.Matrix.VerifySession {
 			return true
 		}
-		if retry, ok := ctx.Value("retry").(bool); ok && !retry {
+		if retry, ok := ctx.Value(retryKey).(bool); ok && !retry {
 			touchedRooms = []string{}
 		}
 
