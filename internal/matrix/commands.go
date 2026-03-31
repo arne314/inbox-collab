@@ -7,6 +7,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"unicode"
 
 	log "github.com/sirupsen/logrus"
 	"maunium.net/go/mautrix/event"
@@ -140,11 +141,32 @@ func (c *Command) reportState(state CommandState) {
 	log.Infof("Command state of %v changed to %v", c.Name, CommandStateReactions[c.state])
 }
 
-func (c *Command) reportStateMessage(message string) {
-	c.reportStateMessageFormatted(message, message)
+// capitalize first word and add a dot at the end
+func FormatStateMessage(s string) string {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return s
+	}
+	runes := []rune(s)
+	runes[0] = unicode.ToUpper(runes[0])
+	if !unicode.IsPunct(runes[len(runes)-1]) {
+		runes = append(runes, '.')
+	}
+	return string(runes)
 }
 
-func (c *Command) reportStateMessageFormatted(message string, messageHtml string) {
+// will apply basic sentence like formatting
+func (c *Command) reportStateMessage(message string, isErr bool) {
+	message = FormatStateMessage(message)
+	c.reportStateMessageFormatted(message, message, isErr)
+}
+
+// assumes formatting is already applied
+func (c *Command) reportStateMessageFormatted(message string, messageHtml string, isErr bool) {
+	if isErr {
+		message = fmt.Sprintf("Error: %s", message)
+		messageHtml = fmt.Sprintf("Error: %s", messageHtml)
+	}
 	if c.threadId == "" {
 		c.client.SendRoomMessage(c.roomId, message, messageHtml)
 	} else {
@@ -165,7 +187,8 @@ func (c *Command) helpCommand() {
 		}
 		builder.WriteLine(convertMdCode(fmt.Sprintf(": %s", cmd.description)))
 	}
-	c.reportStateMessageFormatted(builder.String())
+	text, html := builder.String()
+	c.reportStateMessageFormatted(text, html, false)
 }
 
 func (c *Command) Run(ctx context.Context) {
@@ -182,8 +205,8 @@ func (c *Command) Run(ctx context.Context) {
 
 	if c.Config.thread && c.threadId == "" {
 		ok = false
-		c.reportStateMessageFormatted(convertMdCode(
-			fmt.Sprintf("Error: The command `!%s` is expected to be used in a thread.", c.Name)))
+		text, html := convertMdCode(fmt.Sprintf("The command `!%s` is expected to be used in a thread.", c.Name))
+		c.reportStateMessageFormatted(text, html, true)
 	}
 
 	if ok {
@@ -212,7 +235,7 @@ func (c *Command) Run(ctx context.Context) {
 			ok = err == nil
 			if !ok {
 				log.Errorf("Error handling command %s: %v", c.Name, err)
-				c.reportStateMessage(fmt.Sprintf("Error: %v", err))
+				c.reportStateMessage(err.Error(), true)
 			}
 		default:
 			ok = false
