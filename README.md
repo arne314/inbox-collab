@@ -10,7 +10,7 @@ is optionally stripped using a large language model.
 ## Features
 - Control via `!commands` in Matrix
 - Overview of all open Matrix threads in specific (configured) channels
-- Reply to mails via smtp
+- Reply to mails via smtp and have them stored in imap mailboxes
 - Extensive thread sorting configuration
 - Handling of forwarded and replied-to messages
 - Use LLM from either Ollama or an OpenAI compatible endpoint
@@ -32,10 +32,6 @@ is optionally stripped using a large language model.
 6. Run `docker compose up -d` to properly deploy
 
 ## Development
-1. Enter nix shell with `nix-shell`
-2. Run main go app with `go run ./cmd/main.go`
-3. Run llm python app with `uv run fastapi dev` and setup tracing backend with `uv run arize-phoenix serve`
-4. Run database with `docker compose run -p 5432:5432 db`
-5. Test go with `go test ./...`
-6. Generate sqlc files with `sqlc generate`
+Run `nix develop` to enter the nix shell for development.
+Run `just --list` to see all development specific commands.
 
