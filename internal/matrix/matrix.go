@@ -140,7 +140,10 @@ func (mh *MatrixHandler) AddReply(
 			}
 		}
 	} else {
-		content := *conversation.Messages[0].Content
+		var content string
+		if len(conversation.Messages) > 0 {
+			content = *conversation.Messages[0].Content
+		}
 		if content != "" {
 			builder.Write(content, formatHtml(content))
 		} else {
