@@ -142,6 +142,20 @@ func (q *Queries) AutoUpdateMailReplyTo(ctx context.Context) (int64, error) {
 	return result.RowsAffected(), nil
 }
 
+const closeThreadsInRoom = `-- name: CloseThreadsInRoom :execrows
+UPDATE thread
+SET enabled = FALSE
+WHERE matrix_room_id = $1 AND enabled = TRUE
+`
+
+func (q *Queries) CloseThreadsInRoom(ctx context.Context, matrixRoomID pgtype.Text) (int64, error) {
+	result, err := q.db.Exec(ctx, closeThreadsInRoom, matrixRoomID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const getFetcherState = `-- name: GetFetcherState :many
 SELECT id, uid_last, uid_validity FROM fetcher
 WHERE id = $1 LIMIT 1
