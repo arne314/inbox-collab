@@ -68,7 +68,7 @@ func (me *MessageExtractor) replaceOldMessages() {
 	baseChunks := computeMessageChunks(me.mail.Body)
 	for i := len(me.threadHistory) - 1; i >= 0; i-- { // check latest ones first
 		old := me.threadHistory[i]
-		if old.Messages != nil {
+		if old.Messages != nil && len(old.Messages.Messages) != 0 {
 			var replaced *string
 			oldChunks := computeMessageChunks(old.Body)
 			me.oldMessageChunks[old] = computeMessageChunks(old.Messages.Messages[0].Content)
