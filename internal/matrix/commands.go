@@ -62,11 +62,11 @@ var (
 			description: "Manually reopen a closed thread.",
 		},
 		{
-			name: "move", thread: true,
+			name: "move", thread: true, aliases: []string{"m"},
 			description: "Move a thread into another room. Usage: `!move <room name substring>`",
 		},
 		{
-			name: "reply", triggerOnEdit: true, thread: true,
+			name: "reply", aliases: []string{"r"}, triggerOnEdit: true, thread: true,
 			description: "Reply to an email by replying to it on Matrix. " +
 				"Usage: Reply to a message with `!reply <response text>`. " +
 				"Editing and adding the `!reply` prefix afterwards is allowed.",
