@@ -19,6 +19,7 @@ type Actions interface {
 	OpenThread(ctx context.Context, roomId string, threadId string) bool
 	CloseThread(ctx context.Context, roomId string, threadId string) bool
 	ForceCloseThread(ctx context.Context, roomId string, threadId string) bool
+	CloseThreadsInRoom(ctx context.Context, roomId string) bool
 	MoveThread(ctx context.Context, roomId string, threadId string, query string) bool
 	ReplyToMailInThread(ctx context.Context, roomId string, originalId string, replyToId string, text string, cite bool) error
 	ResendThreadOverview(ctx context.Context, roomId string) bool
@@ -56,6 +57,10 @@ var (
 		{
 			name: "forceclose", aliases: []string{"fc"}, thread: true,
 			description: "Close a thread forever unless manually reopend.",
+		},
+		{
+			name:        "closeall",
+			description: "Close all threads in the current room.",
 		},
 		{
 			name: "open", aliases: []string{"o"}, thread: true,
@@ -219,6 +224,8 @@ func (c *Command) Run(ctx context.Context) {
 			ok = c.actions.CloseThread(ctx, c.roomId, c.threadId)
 		case "forceclose":
 			ok = c.actions.ForceCloseThread(ctx, c.roomId, c.threadId)
+		case "closeall":
+			ok = c.actions.CloseThreadsInRoom(ctx, c.roomId)
 		case "move":
 			c.reportState(Pending)
 			ok = c.actions.MoveThread(ctx, c.roomId, c.threadId, c.Arg)

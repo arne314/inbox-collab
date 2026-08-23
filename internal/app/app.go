@@ -143,6 +143,14 @@ func (ic *InboxCollab) ForceCloseThread(ctx context.Context, roomId string, thre
 	return ok
 }
 
+func (ic *InboxCollab) CloseThreadsInRoom(ctx context.Context, roomId string) bool {
+	ok := ic.dbHandler.CloseThreadsInRoom(ctx, roomId)
+	if ok {
+		ic.QueueMatrixOverviewUpdate([]string{roomId}, true)
+	}
+	return ok
+}
+
 func (ic *InboxCollab) MoveThread(ctx context.Context, roomId string, threadId string, query string) bool {
 	var targetRoom string
 	query = strings.ToLower(query)

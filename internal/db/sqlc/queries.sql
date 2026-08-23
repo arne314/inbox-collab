@@ -88,6 +88,11 @@ UPDATE thread
 SET enabled = $3, force_close = COALESCE($4, force_close)
 WHERE matrix_id = $1 AND matrix_room_id = $2 AND (enabled != $3 OR force_close != COALESCE($4, force_close));
 
+-- name: CloseThreadsInRoom :execrows
+UPDATE thread
+SET enabled = FALSE
+WHERE matrix_room_id = $1 AND enabled = TRUE;
+
 -- name: AddFetcher :exec
 INSERT INTO fetcher (id)
 VALUES ($1);

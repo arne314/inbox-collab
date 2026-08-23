@@ -19,6 +19,7 @@ is optionally stripped using a large language model.
 ## Usage
 - `!help` for command overview
 - `!open`, `!close`, `!forceclose` threads (`!forceclose` won't reopen on mail reply)
+- `!closeall`, to close all threads in a room
 - `!move <room substring>` to move a thread into another channel
 - `!resendoverview` and `!resendoverviewall` to recreate overview messages
 - `!reply` and `!send` replies using a configurable smtp server

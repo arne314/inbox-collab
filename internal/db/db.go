@@ -400,6 +400,18 @@ func (dh *DbHandler) UpdateThreadEnabled(ctx context.Context,
 	return count == 1
 }
 
+func (dh *DbHandler) CloseThreadsInRoom(ctx context.Context, roomId string) bool {
+	ctx, cancel := defaultContext(ctx)
+	defer cancel()
+
+	_, err := dh.queries.CloseThreadsInRoom(ctx, pgtype.Text{String: roomId, Valid: true})
+	if err != nil {
+		log.Errorf("Error closing all threads in room %v: %v", roomId, err)
+		return false
+	}
+	return true
+}
+
 func (dh *DbHandler) AddAllRooms(ctx context.Context) {
 	ctx, cancel := defaultContext(ctx)
 	defer cancel()
