@@ -4,8 +4,15 @@ on:
   push:
   pull_request:
 
+permissions:
+  contents: read
+  packages: write
+
 jobs:
   test:
     uses: ./.github/workflows/test.yml
   lint:
     uses: ./.github/workflows/lint.yml
+  docker:
+    needs: [test, lint]
+    uses: ./.github/workflows/docker.yml
