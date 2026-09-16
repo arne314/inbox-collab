@@ -14,4 +14,5 @@ jobs:
   lint:
     uses: ./.github/workflows/lint.yml
   docker:
+    needs: [test, lint]
     uses: ./.github/workflows/docker.yml
