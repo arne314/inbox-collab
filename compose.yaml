@@ -1,6 +1,6 @@
 services:
   app:
-    image: inbox-collab:latest
+    image: ghcr.io/arne314/inbox-collab:latest
     build:
       context: .
     restart: always
@@ -12,11 +12,11 @@ services:
     env_file:
       - .env
     volumes:
-      - data:/app/data
+      - inbox_collab_data:/app/data
       - ./config:/app/config:z
 
   app-llm:
-    image: inbox-collab-llm:latest
+    image: ghcr.io/arne314/inbox-collab-llm:latest
     build:
       context: .
       dockerfile: Dockerfile.llm
@@ -27,7 +27,7 @@ services:
       - ./config:/app/config:z
 
   db:
-    image: postgres:latest
+    image: postgres:17
     restart: always
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
@@ -36,10 +36,10 @@ services:
     env_file:
       - .env
     volumes:
-      - pgdata:/var/lib/postgresql/data
+      - inbox_collab_pgdata:/var/lib/postgresql/data
       - ./internal/db/sqlc/schema.sql:/docker-entrypoint-initdb.d/init.sql:z
 
 volumes:
-  data:
-  pgdata:
+  inbox_collab_data:
+  inbox_collab_pgdata:
 
