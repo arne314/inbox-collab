@@ -22,7 +22,7 @@ addr_bcc = ["log@example.com", "log-backup@example.com"]
 hostname = "smtpother.example.com"
 port = 465
 addr_from = "My Name <name@example.com>"
-store = ["other::Sent Items", "main::Trash"] # store in imap source (mailbox part must not be listed in the source)
+store = ["other::Sent Items", "main::Trash"] # store in imap source (mailbox part doesn't have to be listed in the source)
 
 [matrix]
 timezone = "Europe/Berlin"
